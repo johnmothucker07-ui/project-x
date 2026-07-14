@@ -8,10 +8,60 @@
 """
 from __future__ import annotations
 
+import geopandas as gpd
+import requests
+from shapely.geometry import Point
+
+# публичный Overpass просит User-Agent, иначе может отвечать ошибкой
+_HEADERS = {"User-Agent": "clinic-siting-student-project/0.1"}
+
+
+def _build_overpass_query(bbox: list[float], tags: list[str]) -> str:
+    """Собрать Overpass QL: объединение node+way по всем тегам в пределах bbox."""
+    min_lon, min_lat, max_lon, max_lat = bbox
+    # ВНИМАНИЕ: Overpass ждёт bbox как (south, west, north, east) = (min_lat, min_lon, max_lat, max_lon)
+    bb = f"{min_lat},{min_lon},{max_lat},{max_lon}"
+    parts = []
+    for tag in tags:
+        key, value = tag.split("=")
+        parts.append(f'node["{key}"="{value}"]({bb});')
+        parts.append(f'way["{key}"="{value}"]({bb});')
+    return "[out:json][timeout:60];(" + "".join(parts) + ");out center;"
+
 
 def fetch_pois(bbox: list[float], tags: list[str], overpass_url: str):
     """Запросить POI из Overpass по bbox и тегам. Возвращает GeoDataFrame точек."""
-    raise NotImplementedError
+    query = _build_overpass_query(bbox, tags)
+    # запрос шлём form-полем data={"data": ...}, иначе Overpass отвечает 406
+    response = requests.post(overpass_url, data={"data": query}, headers=_HEADERS, timeout=90)
+    response.raise_for_status()
+    elements = response.json().get("elements", [])
+
+    records = []
+    geometries = []
+    for element in elements:
+        # у node координаты прямо в элементе, у way/relation — в center (мы просили out center)
+        if element["type"] == "node":
+            lon, lat = element["lon"], element["lat"]
+        else:
+            center = element.get("center")
+            if center is None:
+                continue  # без координат точку не поставить — пропускаем
+            lon, lat = center["lon"], center["lat"]
+
+        element_tags = element.get("tags", {})
+        records.append({
+            "osm_id": element["id"],
+            "osm_type": element["type"],
+            "name": element_tags.get("name"),
+            "amenity": element_tags.get("amenity"),
+            "healthcare": element_tags.get("healthcare"),
+            "lon": lon,
+            "lat": lat,
+        })
+        geometries.append(Point(lon, lat))
+
+    return gpd.GeoDataFrame(records, geometry=geometries, crs="EPSG:4326")
 
 
 def count_competitors(cells, clinics):
