@@ -82,6 +82,32 @@ def count_competitors(cells, clinics):
     return result
 
 
+# человекочитаемые названия типов медучреждений (по тегу amenity)
+_AMENITY_LABELS = {
+    "clinic": "клиники",
+    "hospital": "больницы",
+    "doctors": "кабинеты врачей",
+    "dentist": "стоматологии",
+}
+
+
 def build_context_text(cells, pois) -> dict:
-    """Собрать по каждой клетке текстовую выжимку окружения для промпта VLM."""
-    raise NotImplementedError
+    """Собрать по каждой клетке текстовую выжимку окружения для промпта VLM.
+    Вариант A: описываем только медучреждения рядом (из pois). Возвращает {cell_id: text}."""
+    # по умолчанию рядом ничего — потом перезапишем те клетки, где клиники есть
+    context = {cell_id: "Медучреждений рядом не обнаружено." for cell_id in cells["cell_id"]}
+
+    joined = gpd.sjoin(
+        pois[["amenity", "geometry"]],
+        cells[["cell_id", "geometry"]],
+        how="inner",
+        predicate="within",
+    )
+    for cell_id, group in joined.groupby("cell_id"):
+        total = len(group)
+        parts = []
+        for amenity, count in group["amenity"].value_counts().items():
+            label = _AMENITY_LABELS.get(amenity, amenity or "прочее")
+            parts.append(f"{label}: {count}")
+        context[cell_id] = f"Рядом медучреждений: {total} ({', '.join(parts)})."
+    return context
