@@ -65,8 +65,21 @@ def fetch_pois(bbox: list[float], tags: list[str], overpass_url: str):
 
 
 def count_competitors(cells, clinics):
-    """Посчитать для каждой клетки число медучреждений-конкурентов рядом."""
-    raise NotImplementedError
+    """Посчитать для каждой клетки число медучреждений-конкурентов рядом.
+    Возвращает копию сетки с колонкой existing_clinics."""
+    # каждую клинику относим к клетке, в которую попадает её точка (point within polygon)
+    joined = gpd.sjoin(
+        clinics[["geometry"]],
+        cells[["cell_id", "geometry"]],
+        how="inner",
+        predicate="within",
+    )
+    counts = joined.groupby("cell_id").size()
+
+    result = cells.copy()
+    # клетки без клиник получают 0 (map вернёт NaN → заполняем нулём)
+    result["existing_clinics"] = result["cell_id"].map(counts).fillna(0).astype(int)
+    return result
 
 
 def build_context_text(cells, pois) -> dict:
