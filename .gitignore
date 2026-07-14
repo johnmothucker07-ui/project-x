@@ -1,0 +1,24 @@
+# Секреты
+.env
+
+# Данные (скачиваются/генерируются, не коммитим)
+data/raw/
+data/interim/
+data/processed/
+data/cache/
+# но reference/ коммитим — там маленькие справочники
+!data/reference/
+
+# Результаты
+outputs/maps/
+outputs/tables/
+outputs/figures/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+venv/
+.venv/

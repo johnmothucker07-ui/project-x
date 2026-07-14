@@ -1,0 +1,75 @@
+# ============================================================
+# Единая конфигурация проекта. ВСЕ параметры — здесь, не в коде.
+# Меняешь тут → перезапускаешь пайплайн. Удобно для sensitivity-анализа.
+# ============================================================
+
+# --- Область анализа (первая версия: один фиксированный район) ---
+area:
+  name: "moscow_test_district"
+  # bbox: [min_lon, min_lat, max_lon, max_lat] — границы района
+  # пример ниже — небольшой кусок Москвы, замени на свой район
+  bbox: [37.55, 55.72, 37.65, 55.78]
+
+# --- Сетка ---
+grid:
+  cell_size_m: 500          # размер клетки в метрах (в проде можно 100, для MVP крупнее)
+  id_prefix: "cell_"        # формат cell_id: cell_000001
+  crs_geographic: "EPSG:4326"   # WGS84, для хранения координат
+  crs_metric: "EPSG:3857"       # Web Mercator, для расчёта метров/площадей
+
+# --- Источники данных ---
+data:
+  osm:
+    overpass_url: "https://overpass-api.de/api/interpreter"
+    # теги, по которым ищем существующие клиники-конкуренты
+    clinic_tags: ["amenity=clinic", "amenity=hospital", "amenity=doctors", "healthcare=clinic"]
+    request_pause_s: 1.0    # пауза между запросами Overpass
+  population:
+    source: "kontur"        # Kontur Population (WorldPop-based)
+    file: "data/raw/population/kontur_population.gpkg"
+  satellite:                # УЛУЧШЕНИЕ — пока не используется в первой версии
+    enabled: false
+    provider: "esri"        # esri | mapbox | bing
+    zoom: 16
+  registry:                 # реестр лицензий — для валидации типа
+    file: "data/raw/registry/roszdravnadzor.csv"
+
+# --- Оценка нейросетью (Estimate) ---
+estimate:
+  provider: "qwen"          # ключ переключения провайдера (см. llm_client.py)
+  model: "qwen-vl-max"      # имя модели у провайдера
+  base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"  # OpenAI-совместимый эндпоинт
+  temperature: 0            # 0 — для воспроизводимости (обязательно!)
+  max_retries: 2            # ретраи при кривом JSON
+  request_pause_s: 0.5      # пауза между вызовами (рейт-лимит)
+  use_satellite: false      # первая версия — только текст OSM, без фото
+  cache_dir: "data/cache"   # кэш ответов — не тратить токены повторно
+
+# --- Оптимизация (Optimize) ---
+optimize:
+  budget_clinics: 8         # сколько клиник можно разместить всего
+  min_distance_m: 1000      # мин. расстояние между объектами (СП 42.13330)
+  # веса для нормированных скоров — предмет sensitivity-анализа
+  weights:
+    equity: 1.0
+    profit: 1.0
+
+# --- Маршрутизация (OSRM) ---
+routing:
+  osrm_url: "http://localhost:5000"   # локальный OSRM в Docker
+  profile: "driving"        # driving | walking
+  # ВАЖНО: OSRM принимает координаты как lon,lat (не lat,lon!)
+
+# --- Валидация ---
+validate:
+  registry_hide_fraction: 0.2   # какую долю реальных клиник прячем для backtest
+  baseline: "population_density" # random | population_density
+  # для корреляции wealth_score с ценой м²
+  price_reference: "data/reference/price_per_m2_sample.csv"
+
+# --- Пути вывода ---
+output:
+  processed_dir: "data/processed"
+  tables_dir: "outputs/tables"
+  maps_dir: "outputs/maps"
+  figures_dir: "outputs/figures"
