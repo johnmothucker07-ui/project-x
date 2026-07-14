@@ -30,10 +30,13 @@ def _build_overpass_query(bbox: list[float], tags: list[str]) -> str:
 
 
 def fetch_pois(bbox: list[float], tags: list[str], overpass_url: str,
-               exclude_healthcare: list[str] | None = None):
+               exclude_healthcare: list[str] | None = None,
+               exclude_name_keywords: list[str] | None = None):
     """Запросить POI из Overpass по bbox и тегам. Возвращает GeoDataFrame точек.
     exclude_healthcare — значения тега healthcare, которые не считаем конкурентами
-    (лаборатории, стоматология и т.п.); такие объекты отсеиваем."""
+    (лаборатории, стоматология и т.п.); такие объекты отсеиваем.
+    exclude_name_keywords — стоп-слова в названии (космет/стоматолог/…): OSM часто метит
+    их как clinic, а по тегу не отличить. Грубая эвристика по имени."""
     query = _build_overpass_query(bbox, tags)
     # запрос шлём form-полем data={"data": ...}, иначе Overpass отвечает 406
     response = requests.post(overpass_url, data={"data": query}, headers=_HEADERS, timeout=90)
@@ -69,6 +72,12 @@ def fetch_pois(bbox: list[float], tags: list[str], overpass_url: str,
     # отсеиваем узкие специализации/не-конкурентов по тегу healthcare
     if exclude_healthcare:
         pois = pois[~pois["healthcare"].isin(exclude_healthcare)].reset_index(drop=True)
+
+    # отсеиваем косметологию/стоматологию/пластику по стоп-словам в названии
+    if exclude_name_keywords:
+        name_lower = pois["name"].fillna("").str.lower()
+        pattern = "|".join(exclude_name_keywords)
+        pois = pois[~name_lower.str.contains(pattern, regex=True)].reset_index(drop=True)
 
     return pois
 

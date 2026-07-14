@@ -26,6 +26,9 @@ data:
     # узкие специализации и не-конкуренты — отсеиваем по тегу healthcare
     # (лаборатории, стоматология, реабилитация, психотерапия не конкурируют с поликлиникой)
     exclude_healthcare: ["laboratory", "rehabilitation", "psychotherapist", "dentist"]
+    # стоп-слова по названию: OSM часто метит косметологию/стоматологию/пластику как clinic.
+    # это грубая эвристика (по имени), уточнить можно рубриками 2ГИС (см. TODO «ОТЛОЖЕНО»)
+    exclude_name_keywords: ["космет", "эстет", "пластич", "стоматолог", "дентал", "dental", "beauty", "дерматокосмет"]
     request_pause_s: 1.0    # пауза между запросами Overpass
   population:
     source: "kontur"        # Kontur Population (WorldPop-based)
