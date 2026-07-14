@@ -29,8 +29,11 @@ def _build_overpass_query(bbox: list[float], tags: list[str]) -> str:
     return "[out:json][timeout:60];(" + "".join(parts) + ");out center;"
 
 
-def fetch_pois(bbox: list[float], tags: list[str], overpass_url: str):
-    """Запросить POI из Overpass по bbox и тегам. Возвращает GeoDataFrame точек."""
+def fetch_pois(bbox: list[float], tags: list[str], overpass_url: str,
+               exclude_healthcare: list[str] | None = None):
+    """Запросить POI из Overpass по bbox и тегам. Возвращает GeoDataFrame точек.
+    exclude_healthcare — значения тега healthcare, которые не считаем конкурентами
+    (лаборатории, стоматология и т.п.); такие объекты отсеиваем."""
     query = _build_overpass_query(bbox, tags)
     # запрос шлём form-полем data={"data": ...}, иначе Overpass отвечает 406
     response = requests.post(overpass_url, data={"data": query}, headers=_HEADERS, timeout=90)
@@ -61,7 +64,13 @@ def fetch_pois(bbox: list[float], tags: list[str], overpass_url: str):
         })
         geometries.append(Point(lon, lat))
 
-    return gpd.GeoDataFrame(records, geometry=geometries, crs="EPSG:4326")
+    pois = gpd.GeoDataFrame(records, geometry=geometries, crs="EPSG:4326")
+
+    # отсеиваем узкие специализации/не-конкурентов по тегу healthcare
+    if exclude_healthcare:
+        pois = pois[~pois["healthcare"].isin(exclude_healthcare)].reset_index(drop=True)
+
+    return pois
 
 
 def count_competitors(cells, clinics):

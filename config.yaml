@@ -23,6 +23,9 @@ data:
     overpass_url: "https://overpass-api.de/api/interpreter"
     # теги, по которым ищем существующие клиники-конкуренты
     clinic_tags: ["amenity=clinic", "amenity=hospital", "amenity=doctors", "healthcare=clinic"]
+    # узкие специализации и не-конкуренты — отсеиваем по тегу healthcare
+    # (лаборатории, стоматология, реабилитация, психотерапия не конкурируют с поликлиникой)
+    exclude_healthcare: ["laboratory", "rehabilitation", "psychotherapist", "dentist"]
     request_pause_s: 1.0    # пауза между запросами Overpass
   population:
     source: "kontur"        # Kontur Population (WorldPop-based)
