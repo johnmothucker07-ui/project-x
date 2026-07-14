@@ -42,9 +42,9 @@ data:
 
 # --- Оценка нейросетью (Estimate) ---
 estimate:
-  provider: "qwen"          # ключ переключения провайдера (см. llm_client.py)
-  model: "qwen-vl-max"      # имя модели у провайдера
-  base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"  # OpenAI-совместимый эндпоинт
+  provider: "siliconflow"   # ключ переключения провайдера (см. llm_client.py)
+  model: "Qwen/Qwen3-VL-8B-Instruct"   # VLM у SiliconFlow (для отладки; на финал можно крупнее)
+  base_url: "https://api.siliconflow.com/v1"  # OpenAI-совместимый эндпоинт SiliconFlow (междунар. площадка .com)
   temperature: 0            # 0 — для воспроизводимости (обязательно!)
   max_retries: 2            # ретраи при кривом JSON
   request_pause_s: 0.5      # пауза между вызовами (рейт-лимит)
