@@ -57,11 +57,15 @@ cp .env.example .env      # Windows: copy .env.example .env
 ### 4. Прогон пайплайна
 
 ```bash
-python scripts/01_build_grid.py      # сетка клеток по bbox из config → data/interim
-python scripts/02_collect_data.py    # OSM (клиники, конкуренты, выжимка) + население → data/processed/cells.parquet
-python scripts/03_estimate.py        # VLM: wealth_score + area_character по клеткам (кэш в data/cache)
-python scripts/04_optimize.py        # два скора + MILP → outputs/tables/recommendations.csv
-# python scripts/05_validate.py      # (в разработке)
+python scripts/01_build_grid.py       # сетка клеток по bbox из config → data/interim
+python scripts/02_collect_data.py     # OSM (клиники, конкуренты, выжимка) + население → data/processed/cells.parquet
+python scripts/03_estimate.py         # VLM: wealth_score + area_character по клеткам (кэш в data/cache)
+python scripts/04_optimize.py         # два скора + MILP → outputs/tables/recommendations.csv
+python scripts/05_validate.py         # доступность до/после + baseline → outputs/tables/validation.csv
+python scripts/06_visualize.py        # карта рекомендаций → outputs/maps/recommendations.html
+python scripts/07_report_figures.py   # графики для отчёта → outputs/figures/
+# или всё разом:
+python scripts/run_all.py
 ```
 
 Пробный прогон Estimate на N клетках (экономит токены): `python scripts/03_estimate.py 5`.
@@ -74,6 +78,25 @@ python scripts/04_optimize.py        # два скора + MILP → outputs/tabl
 - `outputs/tables/recommendations.csv` — итог: 8 точек с типом (public/private) и ценностью.
 
 ---
+
+## Пример результата (тестовый район — центр Москвы)
+
+На bbox из config (кусок центра Москвы, сетка 500 м → 182 клетки, 439 клиник-конкурентов из OSM):
+
+**Рекомендации (`outputs/tables/recommendations.csv`):** 8 точек — **6 частных + 2 государственные**, минимальное расстояние между ними 1412 м (норматив ≥ 1000 м соблюдён).
+
+**Валидация доступности (`outputs/tables/validation.csv`)** — среднее по населению время до ближайшей клиники, мин:
+
+| Сценарий | before | after | improvement |
+|---|---|---|---|
+| Модель | 0.480 | **0.450** | **0.030** |
+| Baseline (по плотности) | 0.480 | 0.462 | 0.018 |
+
+→ после добавления точек стало ближе (**after < before**), и модель улучшает доступность **в 1.65× сильнее** наивного baseline.
+Абсолютные значения малы — центр Москвы уже насыщен клиниками; в недообслуженном районе эффект был бы заметнее.
+
+**Визуализация:** `outputs/maps/recommendations.html` (карта: точки с цветом по типу и обоснованием),
+`outputs/figures/` (графики валидации, wealth_score, распределения скоров).
 
 ## Все параметры — в `config.yaml`
 
