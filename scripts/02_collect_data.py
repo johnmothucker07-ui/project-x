@@ -45,6 +45,8 @@ def main():
     # 2. существующие клиники из OSM
     clinics = fetch_clinics_with_retry(cfg["data"]["osm"], bbox)
     print(f"OSM: {len(clinics)} клиник-конкурентов")
+    # сохраняем сами точки клиник — понадобятся на этапе валидации (доступность)
+    save_cells(clinics, "data/interim/clinics.parquet")
 
     # 3. число конкурентов на клетку + текстовая выжимка окружения
     cells = count_competitors(cells, clinics)
