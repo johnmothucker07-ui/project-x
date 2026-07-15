@@ -17,6 +17,7 @@ STEPS = [
     "04_optimize.py",
     "05_validate.py",
     "06_visualize.py",
+    "07_report_figures.py",
 ]
 
 
