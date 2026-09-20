@@ -30,6 +30,28 @@ data:
     # это грубая эвристика (по имени), уточнить можно рубриками 2ГИС (см. TODO «ОТЛОЖЕНО»)
     exclude_name_keywords: ["космет", "эстет", "пластич", "стоматолог", "дентал", "dental", "beauty", "дерматокосмет"]
     request_pause_s: 1.0    # пауза между запросами Overpass
+    # --- окружение (не медицина): для аналитического baseline и контекста VLM ---
+    # СЛОВАРЬ ПРИЗНАКОВ ФИКСИРОВАННЫЙ. Если брать "что вернулось", колонки будут
+    # разными в разных городах и сравнение между ними станет невозможным.
+    environment:
+      overpass_timeout_s: 180
+      # публичный Overpass отдаёт 504 на большом районе — режем bbox на тайлы
+      tile_deg: 0.02          # размер тайла в градусах
+      tile_pause_s: 1.0       # пауза между запросами тайлов (вежливость к API)
+      tile_retries: 4         # публичный Overpass периодически отдаёт ошибку/лимит вместо JSON
+      cache_dir: "data/cache/overpass"   # кэш по тайлам: обрыв не теряет уже скачанное
+      amenity: ["pharmacy", "cafe", "restaurant", "fast_food", "bank", "bar", "pub",
+                "fuel", "school", "kindergarten", "parking"]
+      shop: ["supermarket", "convenience", "clothes", "beauty", "cosmetics", "hairdresser",
+             "jewelry", "car", "bakery", "alcohol", "florist", "furniture", "mobile_phone"]
+      # office=diplomatic СОЗНАТЕЛЬНО не включён: посольства отлично предсказывают
+      # богатство в центре Москвы и ничего не значат в другом городе — переобучение
+      office: ["company", "government", "lawyer", "insurance", "it", "estate_agent"]
+      leisure: ["park", "playground", "fitness_centre", "sports_centre", "garden"]
+      building: ["apartments", "house", "detached", "commercial", "office", "retail", "industrial"]
+      # landuse тянем, но в признаки пока НЕ идёт (см. комментарий в osm.py):
+      # Overpass отдаёт полигон центроидом, крупный полигон засчитается в одну клетку
+      landuse: ["residential", "commercial", "industrial", "retail", "construction"]
   population:
     source: "kontur"        # Kontur Population (WorldPop-based)
     file: "data/raw/population/kontur_population.gpkg"
