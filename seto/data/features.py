@@ -31,13 +31,18 @@ def _area_share(cells: gpd.GeoDataFrame, polygons: gpd.GeoDataFrame,
     if polygons is None or polygons.empty:
         return empty
 
-    merged = gpd.GeoDataFrame(geometry=[polygons.union_all()], crs=polygons.crs)
-    pieces = gpd.overlay(cells[["cell_id", "geometry"]], merged, how="intersection")
+    # Сначала режем по клеткам, и только потом объединяем — внутри клетки
+    # полигонов десятки, а на весь город их сотни тысяч, и один общий
+    # union_all на городском масштабе считается минутами.
+    pieces = gpd.overlay(cells[["cell_id", "geometry"]],
+                         polygons[["geometry"]], how="intersection",
+                         keep_geom_type=True)
     if pieces.empty:
         return empty
 
-    covered = pieces.groupby("cell_id").geometry.apply(lambda g: g.area.sum())
-    share = cells["cell_id"].map(covered).fillna(0.0) / cells.geometry.area
+    merged = pieces.dissolve(by="cell_id")      # unary_union внутри каждой клетки
+    share = (cells["cell_id"].map(merged.geometry.area).fillna(0.0)
+             / cells.geometry.area)
     return share.clip(upper=1.0).rename(name)
 
 
