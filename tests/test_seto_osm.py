@@ -67,6 +67,18 @@ def test_invalid_polygon_is_repaired():
     assert _valid(frame).geometry.is_valid.all()
 
 
+def test_self_intersection_does_not_leave_dangling_lines():
+    """make_valid на «бабочке» возвращает коллекцию с повисшими линиями.
+
+    На реальных данных так вышло у 6 зданий из 15948. Линия в слое зданий
+    ломает расчёт доли площади клетки под застройкой."""
+    bowtie = Polygon([(0, 0), (2, 2), (2, 0), (0, 2)])
+    frame = gpd.GeoDataFrame(geometry=[bowtie], crs="EPSG:4326")
+    result = _valid(frame, polygonal=True)
+    assert result.geometry.geom_type.isin(["Polygon", "MultiPolygon"]).all()
+    assert (result.geometry.area > 0).all()
+
+
 def test_empty_geometry_is_dropped():
     frame = gpd.GeoDataFrame(
         geometry=[Polygon(), Polygon([(0, 0), (1, 0), (1, 1)])], crs="EPSG:4326")
@@ -76,11 +88,13 @@ def test_empty_geometry_is_dropped():
 # --- этажность ---
 
 def test_levels_parsed_and_garbage_becomes_na():
-    frame = pd.DataFrame({"building_levels": ["5", "2;3", "нет", None, "12"]})
+    frame = pd.DataFrame({"building_levels": ["5", "2;3", "нет", None, "12", "0"]})
     levels = _parse_levels(frame)
     assert levels.tolist()[:2] == [5.0, 2.0]      # "2;3" -> берём первое
     assert pd.isna(levels[2]) and pd.isna(levels[3])   # мусор и пропуск -> NA
     assert levels[4] == 12.0
+    # ноль этажей — мусор в данных, а не «нет данных»; на районе таких 4
+    assert pd.isna(levels[5])
 
 
 def test_missing_levels_column_gives_all_na():

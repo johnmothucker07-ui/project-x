@@ -14,6 +14,7 @@ from pathlib import Path
 import geopandas as gpd
 import pandas as pd
 from shapely import make_valid
+from shapely.ops import unary_union
 
 from ..acquire.osm import read_layer
 
@@ -27,7 +28,24 @@ LANDUSE_KEEP = {
 BARRIER_LAYERS = ("water", "park", "industrial", "railway", "cemetery", "military")
 
 
-def _valid(frame: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+_POLYGONAL = ("Polygon", "MultiPolygon")
+
+
+def _polygons_only(geometry):
+    """Оставить от геометрии только полигональные части.
+
+    make_valid на самопересекающемся контуре возвращает GeometryCollection:
+    полигон плюс повисшие линии в местах пересечения. На реальных данных
+    (15948 зданий района) так вышло у шести. Линия в слое зданий ломает
+    расчёт доли площади клетки под застройкой, поэтому её надо убрать."""
+    if geometry is None or geometry.geom_type in _POLYGONAL:
+        return geometry
+    parts = [part for part in getattr(geometry, "geoms", [])
+             if part.geom_type in _POLYGONAL]
+    return unary_union(parts) if parts else None
+
+
+def _valid(frame: gpd.GeoDataFrame, polygonal: bool = False) -> gpd.GeoDataFrame:
     """Починить геометрию и выбросить пустую.
 
     Пустая и отсутствующая геометрия — разные вещи, и notna() ловит только
@@ -37,7 +55,11 @@ def _valid(frame: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     broken = ~frame.geometry.is_valid
     if broken.any():
         frame.loc[broken, frame.geometry.name] = frame.loc[broken].geometry.apply(make_valid)
+        if polygonal:
+            frame.loc[broken, frame.geometry.name] = \
+                frame.loc[broken].geometry.apply(_polygons_only)
     # make_valid иногда схлопывает вырожденный полигон в пустую геометрию
+    frame = frame[frame.geometry.notna()]
     return frame[~frame.geometry.is_empty].reset_index(drop=True)
 
 
@@ -52,7 +74,8 @@ def extract_polygons(pbf: Path, bbox: tuple[float, float, float, float]):
 
     Читаем multipolygons один раз — чтение 85 МБ занимает секунды десятки,
     и делать его по разу на слой незачем."""
-    raw = _dedupe(_valid(read_layer(pbf, "multipolygons", bbox=bbox)))
+    raw = _dedupe(_valid(read_layer(pbf, "multipolygons", bbox=bbox),
+                     polygonal=True))
 
     buildings = raw[raw["building"].notna()].copy()
     buildings["levels"] = _parse_levels(buildings)
@@ -77,7 +100,9 @@ def _parse_levels(frame: gpd.GeoDataFrame) -> pd.Series:
     if column is None:
         return pd.Series(pd.NA, index=frame.index, dtype="Float64")
     raw = frame[column].astype("string").str.split(";").str[0].str.strip()
-    return pd.to_numeric(raw, errors="coerce").astype("Float64")
+    levels = pd.to_numeric(raw, errors="coerce").astype("Float64")
+    # ноль этажей бессмысленен: это мусор в данных, а не «нет данных»
+    return levels.where(levels > 0)
 
 
 def extract_roads(pbf: Path, bbox: tuple[float, float, float, float]):
