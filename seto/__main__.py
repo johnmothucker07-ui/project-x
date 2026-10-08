@@ -20,11 +20,6 @@ from .run import Run, git_state
 
 # команды из п. 15, которые ещё не написаны: имя -> шаг плана
 PLANNED = {
-    "profile-cities": "п. 4.1",
-    "acquire-imagery": "Ш7 (п. 5)",
-    "prompt-dev": "п. 7.4",
-    "sensitivity": "п. 12",
-    "package-results": "п. 18.5",
 }
 
 
@@ -352,6 +347,142 @@ def _load_city_data(run_dir: Path):
         allowed_pairs=times["allowed"], report={})
 
 
+def cmd_sensitivity(args: argparse.Namespace) -> int:
+    """Устойчивость выводов к T, k и alpha (п. 12)."""
+    import json as _json
+
+    import numpy as np
+    import pandas as pd
+
+    from .experiment import sensitivity as sens
+
+    cfg = config_mod.load(args.city)
+    run_dir = Path(args.run_dir)
+    data = _load_city_data(run_dir)
+    scores = _load_scores(run_dir)
+    solutions = _load_solutions(run_dir)
+
+    thresholds = sens.over_thresholds(data, solutions, cfg)
+    by_k = sens.over_k(data, cfg, scores)
+    by_alpha = sens.over_alpha(data, cfg, scores,
+                               cfg["city"].get("role") == "dev")
+    thresholds.to_csv(run_dir / "sensitivity_T.csv", index=False, encoding="utf-8")
+    by_k.to_csv(run_dir / "sensitivity_k.csv", index=False, encoding="utf-8")
+    by_alpha.to_csv(run_dir / "sensitivity_alpha.csv", index=False, encoding="utf-8")
+    result = sens.verdict(thresholds, by_k)
+    (run_dir / "sensitivity.json").write_text(
+        _json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(thresholds.to_string(index=False))
+    print()
+    print(result["note"])
+    return 0
+
+
+def cmd_package_results(args: argparse.Namespace) -> int:
+    """Собрать пакет результатов (п. 18.5)."""
+    from .experiment.package import build
+
+    runs = [Path(p) for p in args.run_dirs]
+    protocol = Path(args.protocol) if args.protocol else None
+    manifest = build(runs, Path(args.out), protocol,
+                     [Path(p) for p in (args.raw or [])])
+    print(f"пакет: {args.out}")
+    print(f"городов: {len(manifest['cities'])}, "
+          f"сырых входов по ссылке: {len(manifest['raw_inputs'])}")
+    return 0
+
+
+def cmd_acquire_imagery(args: argparse.Namespace) -> int:
+    """Загрузка снимков по клеткам (п. 5). Требует выбранного провайдера."""
+    from .imagery.tiles import ProviderNotConfigured, plan_all, require_provider
+
+    cfg = config_mod.load(args.city)
+    try:
+        provider = require_provider(cfg)
+    except ProviderNotConfigured as error:
+        print(f"{error}", file=sys.stderr)
+        return 4
+
+    import geopandas as gpd
+    grid = gpd.read_parquet(Path(args.run_dir) / "grid.parquet")
+    specs = plan_all(grid, cfg)
+    print(f"провайдер {provider}: к загрузке {len(specs)} клеток, "
+          f"зум {specs[0].zoom}, {specs[0].meters_per_pixel:.2f} м/пикс")
+    print("загрузка не выполнена: подключение провайдера — Ш7")
+    return 4
+
+
+def cmd_prompt_dev(args: argparse.Namespace) -> int:
+    """Диагностика промпта на подвыборке города разработки (п. 7.4)."""
+    import numpy as np
+    import pandas as pd
+
+    from .qa.maps import cell_inspector
+    from .scoring import prompt as prompt_mod
+
+    cfg = config_mod.load(args.city)
+    if cfg["city"].get("role") != "dev":
+        print("prompt-dev разрешён только на городах разработки (п. 7.4)",
+              file=sys.stderr)
+        return 1
+    run_dir = Path(args.run_dir)
+    features = pd.read_parquet(run_dir / "cell_features.parquet")
+    texts = prompt_mod.describe_all(features)
+    scores_path = run_dir / "scores_text.parquet"
+    scores = pd.read_parquet(scores_path) if scores_path.is_file() else None
+    out = cell_inspector(features, texts, scores, run_dir / "qa_cells.html",
+                         sample=args.sample)
+    if scores is not None:
+        values = scores["score"].to_numpy()
+        print(f"скоры: {len(np.unique(values))} различных значений, "
+              f"медиана {np.median(values):.0f}, "
+              f"min {values.min():.0f}, max {values.max():.0f}")
+    print(f"инспектор клеток: {out}")
+    return 0
+
+
+def cmd_profile_cities(args: argparse.Namespace) -> int:
+    """Профиль городов-кандидатов для отбора (п. 4.1)."""
+    import json as _json
+
+    rows = []
+    for name in config_mod.available_cities():
+        city = config_mod.load_city(name)
+        rows.append({"city": name, "role": city.get("role"),
+                     "boundary_relation": city["boundary"].get("relation_id"),
+                     "osm_source": (city.get("sources") or {}).get(
+                         "osm_pbf", {}).get("url"),
+                     "clinics_csv": city.get("clinics_csv")})
+    print(_json.dumps(rows, ensure_ascii=False, indent=2))
+    print()
+    print("полный профиль (население, полнота OSM, запас Cov_T) считается "
+          "командой prepare-city по каждому кандидату; критерии отбора "
+          "утверждает человек — это Л8")
+    return 0
+
+
+def _load_scores(run_dir: Path) -> dict:
+    import pandas as pd
+
+    scores = {}
+    for mode in ("text", "image"):
+        path = run_dir / f"scores_{mode}.parquet"
+        if path.is_file():
+            scores[mode] = pd.read_parquet(path)["score"].to_numpy()
+    return scores
+
+
+def _load_solutions(run_dir: Path) -> dict:
+    import json as _json
+
+    path = run_dir / "solutions.json"
+    if not path.is_file():
+        return {}
+    payload = _json.loads(path.read_text(encoding="utf-8"))
+    return {v["variant"]: tuple(v["sites"]) for v in payload["variants"]
+            if v["sites"]}
+
+
 def cmd_utm(args: argparse.Namespace) -> int:
     """Показать зону UTM для координат."""
     print(utm_epsg(args.lon, args.lat))
@@ -440,6 +571,32 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--activity", required=True)
     p.add_argument("--note", default=None)
     p.set_defaults(func=cmd_log_human)
+
+    p = sub.add_parser("sensitivity", help="устойчивость к T, k, alpha")
+    p.add_argument("city")
+    p.add_argument("run_dir")
+    p.set_defaults(func=cmd_sensitivity)
+
+    p = sub.add_parser("package-results", help="пакет результатов (п. 18.5)")
+    p.add_argument("run_dirs", nargs="+")
+    p.add_argument("--out", default="package")
+    p.add_argument("--protocol", default=None)
+    p.add_argument("--raw", nargs="*", default=None)
+    p.set_defaults(func=cmd_package_results)
+
+    p = sub.add_parser("acquire-imagery", help="снимки по клеткам (нужен Л6)")
+    p.add_argument("city")
+    p.add_argument("run_dir")
+    p.set_defaults(func=cmd_acquire_imagery)
+
+    p = sub.add_parser("prompt-dev", help="диагностика промпта (города dev)")
+    p.add_argument("city")
+    p.add_argument("run_dir")
+    p.add_argument("--sample", type=int, default=20)
+    p.set_defaults(func=cmd_prompt_dev)
+
+    p = sub.add_parser("profile-cities", help="профиль городов-кандидатов")
+    p.set_defaults(func=cmd_profile_cities)
 
     p = sub.add_parser("utm", help="зона UTM по координатам")
     p.add_argument("lon", type=float)
