@@ -24,12 +24,7 @@ PLANNED = {
     "acquire-imagery": "Ш7 (п. 5)",
     "prompt-dev": "п. 7.4",
     "sensitivity": "п. 12",
-    "freeze-protocol": "п. 13",
-    "run-test": "п. 13",
     "package-results": "п. 18.5",
-    "export-for-ahp": "п. 10.5",
-    "import-solution": "п. 10.5",
-    "log-human": "п. 14",
 }
 
 
@@ -226,6 +221,137 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_freeze_protocol(args: argparse.Namespace) -> int:
+    """Заморозить протокол и собрать страницу предрегистрации (п. 13)."""
+    from .experiment.protocol import ProtocolMismatch, freeze
+
+    cfg = config_mod.load()
+    cities = {name: config_mod.load_city(name).get("role", "?")
+              for name in config_mod.available_cities()}
+    try:
+        json_path, md_path = freeze(cfg, cities, {}, Path(args.out))
+    except ProtocolMismatch as error:
+        print(f"нельзя замораживать: {error}", file=sys.stderr)
+        return 1
+    print(f"протокол: {json_path}")
+    print(f"страница предрегистрации: {md_path}")
+    print("опубликуй protocol.md на Wiki — это Л14")
+    return 0
+
+
+def cmd_run_test(args: argparse.Namespace) -> int:
+    """Прогон городов проверки: только при совпадении с протоколом (п. 13)."""
+    from .experiment.protocol import verify
+    from .experiment.runner import run_city
+
+    protocol = Path(args.protocol)
+    if not protocol.is_file():
+        print(f"нет протокола: {protocol}", file=sys.stderr)
+        return 3
+
+    failures = 0
+    for name in config_mod.available_cities():
+        cfg = config_mod.load(name)
+        if cfg["city"].get("role") != "test":
+            continue
+        check = verify(protocol, cfg)
+        if not check["ok"]:
+            print(f"{name}: запуск запрещён — " + "; ".join(check["problems"]),
+                  file=sys.stderr)
+            failures += 1
+            continue
+        out = run_city(name, cfg, protocol, args.with_image, "onboard_city")
+        print(f"{name}: {out}")
+    if failures:
+        return 3
+    return 0
+
+
+def cmd_export_for_ahp(args: argparse.Namespace) -> int:
+    """Отдать команде AHP те же данные, на которых работают остальные (п. 10.5)."""
+    import numpy as np
+
+    from .variants.external import export_package
+
+    cfg = config_mod.load(args.city)
+    run_dir = Path(args.run_dir)
+    data = _load_city_data(run_dir)
+    manifest_hash = _manifest_hash(run_dir)
+    paths = export_package(data, cfg, args.city, manifest_hash,
+                           Path(args.out) / args.city)
+    for name, path in paths.items():
+        print(f"{name:<16} {path}")
+    print()
+    print(f"хеш манифеста данных: {manifest_hash}")
+    return 0
+
+
+def cmd_import_solution(args: argparse.Namespace) -> int:
+    """Принять решение варианта E и проверить его общим валидатором."""
+    import json as _json
+
+    import numpy as np
+
+    from .variants.external import ExternalSolutionError, import_solution
+
+    cfg = config_mod.load(args.city)
+    run_dir = Path(args.run_dir)
+    times = np.load(run_dir / "times.npz")
+    try:
+        result = import_solution(Path(args.solution), times["allowed"], cfg,
+                                 args.city, _manifest_hash(run_dir))
+    except ExternalSolutionError as error:
+        print(f"решение отклонено: {error}", file=sys.stderr)
+        return 1
+    target = run_dir / "solution_E.json"
+    target.write_text(_json.dumps({"sites": list(result["sites"]),
+                                   "method_version": result["method_version"]},
+                                  ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"принято: площадки {list(result['sites'])}")
+    print(f"сохранено: {target}")
+    return 0
+
+
+def cmd_log_human(args: argparse.Namespace) -> int:
+    """Записать активное время человека (п. 14, Л15)."""
+    from .costs.human import HumanEntry, append, summary
+
+    cfg = config_mod.load()
+    path = config_mod.data_root(cfg) / "human_log.csv"
+    append(HumanEntry(args.city, args.variant, args.mode, args.minutes,
+                      args.activity, args.note or ""), path)
+    print(f"записано: {args.minutes} мин, {args.activity}")
+    print(summary(path).to_string(index=False))
+    return 0
+
+
+def _manifest_hash(run_dir: Path) -> str:
+    from .run import sha256_of
+
+    manifest = run_dir / "manifest.json"
+    return sha256_of(manifest) if manifest.is_file() else "unknown"
+
+
+def _load_city_data(run_dir: Path):
+    """Собрать CityData из сохранённого прогона."""
+    import geopandas as gpd
+    import numpy as np
+    import pandas as pd
+
+    from .experiment.prepare import CityData
+
+    times = np.load(run_dir / "times.npz")
+    features = pd.read_parquet(run_dir / "cell_features.parquet")
+    return CityData(
+        grid=gpd.read_parquet(run_dir / "grid.parquet"),
+        features=features.drop(columns=["population"], errors="ignore"),
+        population=features["population"].to_numpy(),
+        clinics=gpd.GeoDataFrame(pd.read_csv(run_dir / "clinics.csv")),
+        base_times=times["base"], clinic_times=times["clinics"],
+        site_times=times["sites"], site_index=times["site_index"],
+        allowed_pairs=times["allowed"], report={})
+
+
 def cmd_utm(args: argparse.Namespace) -> int:
     """Показать зону UTM для координат."""
     print(utm_epsg(args.lon, args.lat))
@@ -283,6 +409,37 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("report", help="показать отчёт прогона")
     p.add_argument("run_dir")
     p.set_defaults(func=cmd_report)
+
+    p = sub.add_parser("freeze-protocol", help="заморозить протокол (п. 13)")
+    p.add_argument("--out", default="protocol")
+    p.set_defaults(func=cmd_freeze_protocol)
+
+    p = sub.add_parser("run-test", help="прогон городов проверки по протоколу")
+    p.add_argument("protocol")
+    p.add_argument("--with-image", action="store_true")
+    p.set_defaults(func=cmd_run_test)
+
+    p = sub.add_parser("export-for-ahp", help="пакет данных для команды AHP")
+    p.add_argument("city")
+    p.add_argument("run_dir")
+    p.add_argument("--out", default="ahp_export")
+    p.set_defaults(func=cmd_export_for_ahp)
+
+    p = sub.add_parser("import-solution", help="принять решение варианта E")
+    p.add_argument("city")
+    p.add_argument("run_dir")
+    p.add_argument("solution")
+    p.set_defaults(func=cmd_import_solution)
+
+    p = sub.add_parser("log-human", help="записать активное время человека")
+    p.add_argument("--city", required=True)
+    p.add_argument("--variant", required=True)
+    p.add_argument("--mode", default="onboard_city",
+                   choices=("dev_build", "onboard_city", "recompute"))
+    p.add_argument("--minutes", type=float, required=True)
+    p.add_argument("--activity", required=True)
+    p.add_argument("--note", default=None)
+    p.set_defaults(func=cmd_log_human)
 
     p = sub.add_parser("utm", help="зона UTM по координатам")
     p.add_argument("lon", type=float)
