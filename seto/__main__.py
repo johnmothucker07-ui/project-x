@@ -23,14 +23,9 @@ PLANNED = {
     "profile-cities": "п. 4.1",
     "acquire-imagery": "Ш7 (п. 5)",
     "prompt-dev": "п. 7.4",
-    "score": "п. 7",
-    "solve": "Ш5 (п. 10)",
-    "evaluate": "Ш4 (п. 11)",
     "sensitivity": "п. 12",
-    "run-city": "Ш6",
     "freeze-protocol": "п. 13",
     "run-test": "п. 13",
-    "report": "п. 18",
     "package-results": "п. 18.5",
     "export-for-ahp": "п. 10.5",
     "import-solution": "п. 10.5",
@@ -200,6 +195,37 @@ def cmd_prepare_city(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_run_city(args: argparse.Namespace) -> int:
+    """Сквозной прогон города: подготовка, скоринг, варианты, метрики, отчёт."""
+    from pathlib import Path as _Path
+
+    from .experiment.runner import ProtocolRequired, run_city
+
+    cfg = config_mod.load(args.city)
+    if args.snapshot_date:
+        cfg["snapshot_date"] = args.snapshot_date
+    protocol = _Path(args.protocol) if args.protocol else None
+    try:
+        out = run_city(args.city, cfg, protocol, args.with_image, args.mode)
+    except ProtocolRequired as error:
+        print(f"запуск запрещён: {error}", file=sys.stderr)
+        return 3
+    print()
+    print(f"прогон: {out}")
+    print(f"отчёт:  {out / 'report.md'}")
+    return 0
+
+
+def cmd_report(args: argparse.Namespace) -> int:
+    """Показать готовый отчёт прогона."""
+    path = Path(args.run_dir) / "report.md"
+    if not path.is_file():
+        print(f"нет отчёта: {path}", file=sys.stderr)
+        return 1
+    print(path.read_text(encoding="utf-8"))
+    return 0
+
+
 def cmd_utm(args: argparse.Namespace) -> int:
     """Показать зону UTM для координат."""
     print(utm_epsg(args.lon, args.lat))
@@ -242,6 +268,21 @@ def build_parser() -> argparse.ArgumentParser:
                    choices=("dev_build", "onboard_city", "recompute"),
                    help="режим учёта затрат (п. 14)")
     p.set_defaults(func=cmd_prepare_city)
+
+    p = sub.add_parser("run-city", help="сквозной прогон города до отчёта")
+    p.add_argument("city")
+    p.add_argument("--snapshot-date", default=None)
+    p.add_argument("--protocol", default=None,
+                   help="путь к protocol.json (обязателен для городов test)")
+    p.add_argument("--with-image", action="store_true",
+                   help="считать вариант D (нужны загруженные снимки)")
+    p.add_argument("--mode", default="onboard_city",
+                   choices=("dev_build", "onboard_city", "recompute"))
+    p.set_defaults(func=cmd_run_city)
+
+    p = sub.add_parser("report", help="показать отчёт прогона")
+    p.add_argument("run_dir")
+    p.set_defaults(func=cmd_report)
 
     p = sub.add_parser("utm", help="зона UTM по координатам")
     p.add_argument("lon", type=float)

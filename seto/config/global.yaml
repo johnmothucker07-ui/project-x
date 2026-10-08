@@ -127,3 +127,4 @@ paths:
   data_root: null
   raw: "raw"
   runs: "runs"
+  vlm_cache: "cache/vlm"   # кэш ответов модели, общий для прогонов
