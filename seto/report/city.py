@@ -112,6 +112,33 @@ def build(evaluation, city_report: dict, cfg: dict, out_dir: Path,
     return paths
 
 
+def md_table(frame: pd.DataFrame, digits: int = 2) -> str:
+    """Таблица в Markdown без внешней зависимости.
+
+    pandas.to_markdown требует tabulate; тянуть пакет ради трёх таблиц
+    незачем, а формат нужен предсказуемый."""
+    if frame.empty:
+        return "_нет данных_"
+
+    def cell(value) -> str:
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return "—"
+        if isinstance(value, bool):
+            return "да" if value else "нет"
+        if isinstance(value, (int, np.integer)):
+            return f"{value:,}".replace(",", " ")
+        if isinstance(value, float):
+            return f"{value:,.{digits}f}".replace(",", " ")
+        return str(value)
+
+    header = list(frame.columns)
+    rows = [[cell(v) for v in row] for row in frame.itertuples(index=False)]
+    lines = ["| " + " | ".join(header) + " |",
+             "|" + "|".join("---" for _ in header) + "|"]
+    lines += ["| " + " | ".join(row) + " |" for row in rows]
+    return "\n".join(lines)
+
+
 def _markdown(main: pd.DataFrame, appendix: pd.DataFrame, evaluation,
               city: dict, cfg: dict, summary: dict) -> str:
     threshold = cfg["T_minutes"]
@@ -143,11 +170,11 @@ def _markdown(main: pd.DataFrame, appendix: pd.DataFrame, evaluation,
                   "решают задачу с ним.", ""]
 
     lines += [f"## Главная таблица (T = {threshold}, k = {cfg['k']})", "",
-              main.to_markdown(index=False, floatfmt=".2f"), "",
+              md_table(main), "",
               "## Разницы между вариантами", "",
-              evaluation.differences.to_markdown(index=False, floatfmt=".2f"), "",
+              md_table(evaluation.differences), "",
               "## Устойчивость по порогу", "",
-              appendix.to_markdown(index=False, floatfmt=".2f"), "",
+              md_table(appendix), "",
               "## Критерии пилота", "",
               "```json",
               json.dumps(summary["pilot_criteria"], ensure_ascii=False, indent=2),
