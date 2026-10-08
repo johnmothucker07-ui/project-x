@@ -73,7 +73,14 @@ osm:
   buildings: ["apartments", "house", "detached", "residential",
               "commercial", "office", "retail", "public", "civic", "industrial"]
   main_roads: ["motorway", "trunk", "primary", "secondary"]   # для варианта E
-  walk_network: "walk"       # фильтр пешеходной сети в терминах OSMnx
+  # Пешеходная сеть. Магистрали исключены: по ним ходить нельзя, а если их
+  # оставить, граф свяжет берега реки по автомобильному мосту без тротуара.
+  walk_network:
+    include: ["footway", "path", "pedestrian", "steps", "living_street",
+              "residential", "service", "unclassified", "tertiary",
+              "secondary", "primary", "track", "cycleway", "road"]
+    exclude: ["motorway", "motorway_link", "trunk", "trunk_link",
+              "construction", "proposed", "raceway", "bus_guideway"]
   poi:
     amenity: ["school", "kindergarten", "pharmacy"]
     shop: ["supermarket", "convenience"]
