@@ -1,0 +1,28 @@
+# Москва — город разработки.
+# Роли городов утверждаются человеком по отчёту profile-cities (Л8), пока черновик.
+
+name: moscow
+title: "Москва"
+role: dev                    # dev | test | reserve
+
+boundary:
+  source: osm_relation
+  relation_id: 2555133       # Москва, проверить admin_level при загрузке
+  admin_level: 4
+
+# UTM-зона: null = определить по центроиду границы при подготовке города
+utm_epsg: null
+
+# Ссылки на сырые данные — заполняются после acquire
+raw:
+  osm_pbf: null
+  osm_pbf_sha256: null
+  osm_date: null
+  population_raster: null
+  population_sha256: null
+
+# Проверенный список поликлиник (п. 4.5) — заполняется после ручной проверки (Л9)
+clinics_csv: null
+
+# Необязательно: доля взрослых по муниципалитетам (Л11)
+adult_share_csv: null

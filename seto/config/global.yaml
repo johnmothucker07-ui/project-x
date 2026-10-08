@@ -1,0 +1,110 @@
+# ============================================================
+# SETO — параметры, общие для всех городов.
+# Источник значений — пропозал v4 (п. 3.1, 3.2) и SETO_experiment_TODO_1.md (п. 3.1).
+# В коде не должно быть ни одного из этих чисел.
+# ============================================================
+
+# --- Сценарий ---
+scenario: state              # state | private (частный — отдельно, п. 17)
+
+# --- Размещение ---
+k: 2                         # сколько новых объектов на город
+k_sensitivity: [1]           # проверка устойчивости
+
+# --- Доступность ---
+T_minutes: 15                # главный порог (п. 3.1)
+T_sensitivity: [10, 20]
+walk_speed_m_per_min: 75     # ≈ 4,5 км/ч; время ребра = длина / скорость  [Д6]
+t_max_minutes: 60            # потолок для недостижимых и дальних
+snap_max_m: 300              # дальше этого точка считается непривязанной
+
+# --- Общие ограничения (одинаковы для ВСЕХ вариантов A, B, M, C, D, E) ---
+min_dist_to_existing_m: 500  # от новой площадки до любой существующей поликлиники
+min_dist_between_new_m: 500  # между новыми площадками
+# оба расстояния меряются ПО ПЕШЕХОДНОЙ СЕТИ, не по прямой
+
+# --- Сетка ---
+# Решение Д5 (08.10): UTM, origin округляется до кратного grid_size_m.
+# Привязка к проекции, а не к границе города: иначе правка границы сдвигает все
+# cell_id, а на них завязан кэш ответов VLM и имена файлов со снимками.
+grid:
+  size_m: 500                # как в MVP (пропозал п. 3.1 фиксирует только размер)
+  origin_rule: "floor_to_size"   # origin = floor(min / size) * size в координатах UTM
+  id_format: "cell_{:06d}"   # формат MVP
+  # нумерация построчно снизу вверх, слева направо — тоже как в MVP
+
+# --- Скоринг VLM ---
+vlm:
+  model: "google/gemma-4-31B-it"      # решение Д1 (08.10)
+  base_url_env: "MODELS_BASE_URL"     # адрес берётся из .env, не из конфига
+  api_key_env: "MODELS_API_KEY"       # ключ НИКОГДА не пишется в конфиг
+  temperature: 0
+  seed: 42
+  max_tokens: 300
+  timeout_s: 180
+  max_parallel: 8
+  requests_per_minute: 0              # 0 = без искусственного ограничения
+  retries: 1                          # один повтор, потом imputed (п. 7.1)
+
+alpha: 1.0                   # вес скора: w_i = P_i * (1 + alpha * s_hat_i)
+alpha_sensitivity: [0.5, 2.0]         # только на городах разработки
+
+imputation_max_share: 0.05   # выше — вариант в городе неуспешен (п. 7.1)  [Д8]
+
+# --- Варианты ---
+random_draws: 1000           # сколько случайных допустимых наборов для варианта A
+seed: 0                      # сид для всего случайного
+
+# --- Допустимые площадки ---
+# [Д7] — правило пока черновое, требует подтверждения
+feasible_site:
+  min_built_area_share: 0.05      # доля площади жилых и общественных зданий в клетке
+  exclude_landuse: ["industrial", "railway", "cemetery", "military"]
+  exclude_natural: ["water"]
+  exclude_leisure: ["park", "garden"]
+
+# --- Теги OSM ---
+osm:
+  clinic_tags:
+    amenity: ["clinic", "doctors", "hospital"]
+    healthcare: ["clinic", "centre", "doctor"]
+  landuse: ["residential", "commercial", "retail", "industrial", "railway",
+            "cemetery", "military", "farmland", "construction"]
+  buildings: ["apartments", "house", "detached", "residential",
+              "commercial", "office", "retail", "public", "civic", "industrial"]
+  main_roads: ["motorway", "trunk", "primary", "secondary"]   # для варианта E
+  walk_network: "walk"       # фильтр пешеходной сети в терминах OSMnx
+  poi:
+    amenity: ["school", "kindergarten", "pharmacy"]
+    shop: ["supermarket", "convenience"]
+    public_transport: ["platform"]
+    highway: ["bus_stop"]
+
+# --- Население ---
+population:
+  source: "worldpop"         # worldpop | ghs_pop  [Д9 — не подтверждено]
+  resolution_m: 100
+  mass_tolerance: 0.001      # расхождение суммы при переносе в клетки, доля
+
+# --- Снимки (вариант D) ---
+imagery:
+  provider: null             # [Д/Л6] — не выбран, условия использования не прочитаны
+  target_m_per_px: 1.0
+  size_px: 512
+  context_margin_m: 0        # в MVP снимков нет, запаса наследовать неоткуда
+  format: "png"
+
+# --- Цены для учёта затрат (п. 14) ---
+costs:
+  vlm_per_1k_prompt_tokens: 0.0       # внутренний сервер бесплатный  [Д3]
+  vlm_per_1k_completion_tokens: 0.0
+  imagery_per_1k_tiles: 0.0
+  note: "API бесплатный: критерий затрат считается по человеко-времени"
+
+# --- Срез данных ---
+snapshot_date: null          # заполняется при первой загрузке raw/
+
+# --- Пути ---
+paths:
+  raw: "raw"
+  runs: "runs"
