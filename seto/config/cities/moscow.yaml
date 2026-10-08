@@ -13,13 +13,20 @@ boundary:
 # UTM-зона: null = определить по центроиду границы при подготовке города
 utm_epsg: null
 
-# Ссылки на сырые данные — заполняются после acquire
+# Источники сырых данных.
+# Городская выгрузка BBBike (81 МБ) вместо регионального Geofabrik (839 МБ):
+# район помещается целиком, а качать и обрезать федеральный округ незачем.
+# Если понадобится область за пределами выгрузки — есть
+# https://download.geofabrik.de/russia/central-fed-district-latest.osm.pbf
+sources:
+  osm_pbf:
+    url: "https://download.bbbike.org/osm/bbbike/Moscow/Moscow.osm.pbf"
+    license: "ODbL 1.0, OpenStreetMap contributors"
+
+# Заполняется после acquire: фактические пути, хеши и даты — в data_manifest.json
 raw:
   osm_pbf: null
-  osm_pbf_sha256: null
-  osm_date: null
   population_raster: null
-  population_sha256: null
 
 # Проверенный список поликлиник (п. 4.5) — заполняется после ручной проверки (Л9)
 clinics_csv: null
