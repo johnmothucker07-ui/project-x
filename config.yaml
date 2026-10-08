@@ -73,6 +73,21 @@ estimate:
   use_satellite: false      # первая версия — только текст OSM, без фото
   cache_dir: "data/cache"   # кэш ответов — не тратить токены повторно
 
+# --- Аналитический baseline (конкурент VLM; СЧИТАЕТ КОД, модели здесь нет) ---
+analytical:
+  # ZERO-LABEL эвристика: веса выставлены руками и НЕ подбирались по ценам.
+  # Иначе сравнение с zero-shot VLM нечестное — модель разметки тоже не видела.
+  # Обучаемый вариант (регрессия на ценах) — отдельный арм, не этот.
+  #
+  # Индекс строится на ДОЛЯХ, а не на счётчиках: счётчики меряют плотность
+  # городской ткани (плотность ↔ число клиник = 0.63), а не достаток.
+  premium: ["shop_clothes", "shop_beauty", "shop_cosmetics", "shop_jewelry",
+            "amenity_restaurant", "amenity_bar", "amenity_cafe",
+            "office_lawyer", "leisure_fitness_centre"]
+  econ: ["shop_convenience", "shop_supermarket", "shop_alcohol",
+         "shop_mobile_phone", "amenity_fast_food"]
+  smoothing: 1.0   # сглаживание доли: клетка с одним объектом не должна давать 0 или 1
+
 # --- Оптимизация (Optimize) ---
 optimize:
   budget_clinics: 8         # сколько клиник можно разместить всего
