@@ -22,7 +22,6 @@ from .run import Run, git_state
 PLANNED = {
     "profile-cities": "п. 4.1",
     "acquire-imagery": "Ш7 (п. 5)",
-    "prepare-city": "Ш3 (п. 4.4-4.7, 6)",
     "prompt-dev": "п. 7.4",
     "score": "п. 7",
     "solve": "Ш5 (п. 10)",
@@ -164,6 +163,43 @@ def cmd_acquire(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_prepare_city(args: argparse.Namespace) -> int:
+    """Подготовить все общие данные города: сетка, население, граф, площадки."""
+    import json
+
+    from .costs.timer import CostLog
+    from .experiment.prepare import prepare_city
+
+    cfg = config_mod.load(args.city)
+    if args.snapshot_date:
+        cfg["snapshot_date"] = args.snapshot_date
+    if not cfg.get("snapshot_date"):
+        print("не задан snapshot_date: укажи --snapshot-date или впиши в config",
+              file=sys.stderr)
+        return 1
+
+    costs = CostLog(mode=args.mode)
+    with Run.start(args.city, "prepare-city", cfg) as run:
+        logger = RunLogger(run.run_id, run.dir / "log.jsonl")
+        data = prepare_city(args.city, cfg, run.dir, logger, costs)
+        for path in data.save(run.dir).values():
+            run.record_output(path)
+        report = run.dir / "city_report.json"
+        report.write_text(json.dumps(data.report, ensure_ascii=False, indent=2),
+                          encoding="utf-8")
+        run.record_output(report)
+        run.record_output(costs.save(run.dir / "costs.json"))
+        logger.info("подготовка завершена", seconds=round(costs.total(), 1))
+        logger.close()
+
+    print()
+    print(f"готово за {costs.total():.0f} с: {run.dir}")
+    if data.report["k_reduced"]:
+        print(f"ВНИМАНИЕ: k снижен до {data.report['max_feasible_k']} — "
+              "все варианты будут решать задачу с ним")
+    return 0
+
+
 def cmd_utm(args: argparse.Namespace) -> int:
     """Показать зону UTM для координат."""
     print(utm_epsg(args.lon, args.lat))
@@ -198,6 +234,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--overwrite", action="store_true",
                    help="перекачать, даже если файл уже есть")
     p.set_defaults(func=cmd_acquire)
+
+    p = sub.add_parser("prepare-city", help="сетка, население, граф, площадки")
+    p.add_argument("city")
+    p.add_argument("--snapshot-date", default=None)
+    p.add_argument("--mode", default="onboard_city",
+                   choices=("dev_build", "onboard_city", "recompute"),
+                   help="режим учёта затрат (п. 14)")
+    p.set_defaults(func=cmd_prepare_city)
 
     p = sub.add_parser("utm", help="зона UTM по координатам")
     p.add_argument("lon", type=float)

@@ -102,6 +102,13 @@ def cache_key(cell_id: str, model: str, prompt: str,
 
 
 def _make_client(cfg: dict):
+    """Клиент модели.
+
+    bind_source_ip — запасной выход для машин с VPN «на весь трафик»: такой
+    клиент забирает маршрут до внутреннего адреса себе, и сервер лаборатории
+    становится недоступен. Привязка исходящего адреса к нужному интерфейсу
+    это обходит. По умолчанию выключено: правильное решение — настроить
+    split-tunnel, а не обходить маршрутизацию из кода."""
     from openai import OpenAI
 
     base_url = os.environ.get(cfg["vlm"]["base_url_env"])
@@ -110,8 +117,19 @@ def _make_client(cfg: dict):
         raise RuntimeError(
             f"не заданы {cfg['vlm']['base_url_env']} и {cfg['vlm']['api_key_env']} "
             "в .env")
+
+    http_client = None
+    source_ip = os.environ.get("SETO_BIND_SOURCE_IP") or cfg["vlm"].get("bind_source_ip")
+    if source_ip:
+        import httpx
+
+        http_client = httpx.Client(
+            transport=httpx.HTTPTransport(local_address=source_ip),
+            timeout=cfg["vlm"].get("timeout_s", 180))
+
     return OpenAI(base_url=base_url, api_key=api_key,
-                  timeout=cfg["vlm"].get("timeout_s", 180))
+                  timeout=cfg["vlm"].get("timeout_s", 180),
+                  http_client=http_client)
 
 
 def _message(prompt: str, mode: str, payload) -> list:
