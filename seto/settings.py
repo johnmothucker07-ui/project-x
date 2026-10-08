@@ -5,12 +5,23 @@
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
 import yaml
+from dotenv import load_dotenv
 
 CONFIG_DIR = Path(__file__).parent / "config"   # каталог с YAML, не этот модуль
+
+# переменная окружения важнее конфига: путь к данным у каждого свой,
+# в общий репозиторий его класть нельзя
+DATA_ROOT_ENV = "SETO_DATA_ROOT"
+
+# .env читаем ОДИН раз при импорте, а не в каждом обращении к настройке:
+# иначе файл молча перекрывал бы всё, что выставлено программно или в тестах.
+# Уже заданные переменные окружения load_dotenv не трогает.
+load_dotenv()
 
 
 class ConfigError(RuntimeError):
@@ -48,6 +59,25 @@ def load(city: str | None = None) -> dict:
         validate_city(city_cfg, city)
         cfg["city"] = city_cfg
     return cfg
+
+
+def data_root(cfg: dict) -> Path:
+    """Корень для raw/ и runs/.
+
+    Там лежат гигабайты: выгрузки PBF, растры населения, спутниковые тайлы.
+    Приоритет: переменная SETO_DATA_ROOT -> paths.data_root в конфиге ->
+    текущий каталог. Переменная берётся из окружения (.env прочитан при
+    импорте модуля)."""
+    from_env = os.environ.get(DATA_ROOT_ENV)
+    if from_env:
+        return Path(from_env).expanduser()
+    from_cfg = (cfg.get("paths") or {}).get("data_root")
+    return Path(from_cfg).expanduser() if from_cfg else Path(".")
+
+
+def raw_dir(cfg: dict, city: str, snapshot_date: str) -> Path:
+    """raw/<city>/<snapshot_date>/ — только на чтение после фиксации (п. 4)."""
+    return data_root(cfg) / cfg["paths"]["raw"] / city / snapshot_date
 
 
 def validate_global(cfg: dict) -> None:

@@ -67,20 +67,25 @@ class Run:
             run.record_output(run.dir / "grid.parquet")
     """
 
-    def __init__(self, city: str, command: str, cfg: dict, root: Path) -> None:
+    def __init__(self, city: str, command: str, cfg: dict,
+                 root: Path | None = None) -> None:
+        from .settings import data_root
+
         self.city = city
         self.command = command
         self.cfg = cfg
         self.run_id = make_run_id(command)
-        self.dir = root / cfg["paths"]["runs"] / city / self.run_id
+        # root задаётся явно только в тестах; обычно берётся из SETO_DATA_ROOT
+        base = Path(root) if root is not None else data_root(cfg)
+        self.dir = base / cfg["paths"]["runs"] / city / self.run_id
         self._inputs: dict[str, str] = {}
         self._outputs: dict[str, str] = {}
         self._started = datetime.now(timezone.utc)
 
     @classmethod
     def start(cls, city: str, command: str, cfg: dict,
-              root: str | Path = ".") -> "Run":
-        run = cls(city, command, cfg, Path(root))
+              root: str | Path | None = None) -> "Run":
+        run = cls(city, command, cfg, root)
         run.dir.mkdir(parents=True, exist_ok=False)
         # копия эффективного конфига — чтобы прогон читался без доступа к репозиторию
         with (run.dir / "effective_config.yaml").open("w", encoding="utf-8") as f:

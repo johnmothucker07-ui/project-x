@@ -74,6 +74,15 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     print(f"  коммит {state['commit']}  ветка {state['branch']}  "
           f"грязное дерево: {state['dirty']}")
 
+    print("--- где будут данные ---")
+    root = config_mod.data_root(cfg).resolve()
+    print(f"  data_root: {root}")
+    # сырые PBF и растры — это гигабайты; синхронизация их в облако тормозит запись
+    synced = [part for part in ("OneDrive", "Dropbox", "Яндекс.Диск", "Google Drive")
+              if part.lower() in str(root).lower()]
+    if synced:
+        print(f"  ВНИМАНИЕ: путь внутри {synced[0]} — задай SETO_DATA_ROOT в .env")
+
     print("--- ключ модели ---")
     env = Path(".env")
     key_name = cfg["vlm"]["api_key_env"]

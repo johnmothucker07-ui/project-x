@@ -42,6 +42,29 @@ def test_key_is_not_in_config():
     assert "sk-" not in text
 
 
+def test_data_root_prefers_env(monkeypatch, tmp_path):
+    """SETO_DATA_ROOT важнее конфига: путь к гигабайтам у каждого свой."""
+    cfg = settings.load()
+    cfg["paths"]["data_root"] = "/from/config"
+    monkeypatch.setenv(settings.DATA_ROOT_ENV, str(tmp_path))
+    assert settings.data_root(cfg) == tmp_path
+
+
+def test_data_root_falls_back_to_config(monkeypatch):
+    cfg = settings.load()
+    cfg["paths"]["data_root"] = "/from/config"
+    monkeypatch.delenv(settings.DATA_ROOT_ENV, raising=False)
+    assert settings.data_root(cfg) == Path("/from/config")
+
+
+def test_raw_dir_layout(monkeypatch, tmp_path):
+    """raw/<city>/<snapshot_date>/ — фиксированная раскладка из п. 4."""
+    cfg = settings.load()
+    monkeypatch.setenv(settings.DATA_ROOT_ENV, str(tmp_path))
+    assert settings.raw_dir(cfg, "moscow", "2026-10-08") == \
+           tmp_path / "raw" / "moscow" / "2026-10-08"
+
+
 def test_threshold_above_tmax_rejected():
     cfg = settings.load_global()
     cfg["T_minutes"] = cfg["t_max_minutes"] + 1
