@@ -45,7 +45,11 @@ def _score_variant(mode: str, cell_ids, inputs, cfg: dict, run_dir: Path,
                    costs: CostLog, logger) -> tuple[np.ndarray | None, dict]:
     """Скоры одного варианта. Сбой не роняет город — вариант станет failed."""
     variant = "C" if mode == "text" else "D"
-    cache = Path(cfg["paths"].get("vlm_cache", "cache/vlm")) / mode
+    # кэш должен лежать рядом с raw/ и runs/, а не в текущем каталоге:
+    # иначе запуск из другой папки заново тратит тысячи вызовов модели
+    from .. import settings as settings_mod
+    cache = (settings_mod.data_root(cfg)
+             / cfg["paths"].get("vlm_cache", "cache/vlm") / mode)
     try:
         with costs.stage("scoring", f"variant:{variant}") as extra:
             scores, report = scoring_client.score_cells(
