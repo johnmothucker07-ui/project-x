@@ -189,6 +189,8 @@ def prepare_city(city: str, cfg: dict, out_dir: Path, logger=None,
             max_feasible_k=feasible_k)
 
     report = {
+        "name": city,
+        "snapshot_date": cfg.get("snapshot_date"),
         "boundary": area.as_dict(),
         "grid": grid_mod.grid_summary(grid),
         "population": transfer.as_dict(),
