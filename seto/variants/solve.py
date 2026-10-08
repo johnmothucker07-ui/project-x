@@ -42,6 +42,18 @@ def _improvement(site_times: np.ndarray, base_times: np.ndarray) -> np.ndarray:
     return np.maximum(0.0, base_times[None, :] - site_times)
 
 
+# Перебор пар держит в памяти массив (чанк x площадки x клетки). На городе это
+# 1497 площадок и 3958 клеток, то есть 47 МБ на каждую строку чанка: без лимита
+# размер улетает в гигабайты.
+_CHUNK_BYTES = 256 << 20
+
+
+def chunk_for(count: int, cells: int) -> int:
+    """Сколько строк брать за раз, чтобы уложиться в бюджет памяти."""
+    per_row = max(1, count * cells * 8)
+    return max(1, int(_CHUNK_BYTES / per_row))
+
+
 def _best_pair(score_pair, count: int, allowed: np.ndarray,
                chunk: int = 64) -> tuple[tuple[int, int], float, int, int]:
     """Перебор всех допустимых пар с детерминированным разрешением ничьих.
@@ -99,7 +111,9 @@ def solve_pmedian(site_times: np.ndarray, base_times: np.ndarray,
         # выигрыш пары — поэлементный максимум вкладов, а не их сумма
         return np.maximum(gain[rows][:, None, :], gain[None, :, :]).sum(axis=2)
 
-    pair, value, evaluated, ties = _best_pair(score, len(site_times), allowed)
+    pair, value, evaluated, ties = _best_pair(
+        score, len(site_times), allowed,
+        chunk=chunk_for(len(site_times), site_times.shape[1]))
     return Solution(tuple(sorted(pair)), float(value), variant, evaluated, ties)
 
 
@@ -126,7 +140,9 @@ def solve_max_coverage(site_times: np.ndarray, base_times: np.ndarray,
         union = (new[rows][:, None, :] | new[None, :, :])
         return (union * population[None, None, :]).sum(axis=2)
 
-    pair, value, evaluated, ties = _best_pair(score, len(site_times), allowed)
+    pair, value, evaluated, ties = _best_pair(
+        score, len(site_times), allowed,
+        chunk=chunk_for(len(site_times), site_times.shape[1]))
     return Solution(tuple(sorted(pair)), float(value), "M", evaluated, ties)
 
 
