@@ -190,3 +190,70 @@ def estimate_pairs(count: int, allowed: np.ndarray) -> dict:
     total = count * (count - 1) // 2
     return {"sites": int(count), "pairs_total": int(total),
             "pairs_allowed": int(np.triu(allowed, k=1).sum())}
+
+
+# --- k > 2: целочисленная оптимизация ---
+
+def solve_ilp(site_times: np.ndarray, base_times: np.ndarray,
+              weights: np.ndarray, allowed: np.ndarray, k: int,
+              variant: str = "B", threshold: float | None = None,
+              time_limit_s: int = 300) -> Solution:
+    """Решение при k > 2 через ILP (п. 10.3).
+
+    Полный перебор растёт как C(|J|, k) и при k > 2 становится неподъёмным:
+    на 1497 площадках троек уже полмиллиарда. Формулировка классическая —
+    переменные открытия и назначения.
+
+    threshold задан → максимальное покрытие, иначе p-median с весами."""
+    import pulp
+
+    sites, cells = site_times.shape
+    problem = pulp.LpProblem("seto", pulp.LpMinimize if threshold is None
+                             else pulp.LpMaximize)
+    opened = [pulp.LpVariable(f"y_{j}", cat="Binary") for j in range(sites)]
+    problem += pulp.lpSum(opened) == k
+
+    # разнесение площадок: пара, нарушающая ограничение, не открывается вместе
+    for a in range(sites):
+        for b in range(a + 1, sites):
+            if not allowed[a, b]:
+                problem += opened[a] + opened[b] <= 1
+
+    if threshold is None:
+        gain = _improvement(site_times, base_times) * weights[None, :]
+        # Классические переменные назначения (п. 10.3): клетка приписывается
+        # не более чем одной ОТКРЫТОЙ площадке. Через «большое M» эту задачу
+        # записать нельзя: закрытая площадка тогда не связывает выигрыш.
+        # Переменные заводятся только там, где выигрыш положителен — иначе
+        # на реальном городе их были бы миллионы.
+        assign = {}
+        for j in range(sites):
+            for i in np.flatnonzero(gain[j] > 0):
+                assign[(j, int(i))] = pulp.LpVariable(f"x_{j}_{i}", lowBound=0,
+                                                      upBound=1)
+        for (j, i), variable in assign.items():
+            problem += variable <= opened[j]
+        for i in range(cells):
+            linked = [assign[(j, i)] for j in range(sites) if (j, i) in assign]
+            if linked:
+                problem += pulp.lpSum(linked) <= 1
+        problem += -pulp.lpSum(gain[j, i] * variable
+                               for (j, i), variable in assign.items())
+    else:
+        new = (site_times <= threshold) & ~(base_times <= threshold)[None, :]
+        covered = [pulp.LpVariable(f"x_{i}", cat="Binary") for i in range(cells)]
+        for i in range(cells):
+            reachable = np.flatnonzero(new[:, i])
+            if reachable.size == 0:
+                problem += covered[i] == 0
+            else:
+                problem += covered[i] <= pulp.lpSum(opened[j] for j in reachable)
+        problem += pulp.lpSum(weights[i] * covered[i] for i in range(cells))
+
+    problem.solve(pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit_s))
+    chosen = tuple(j for j in range(sites) if opened[j].value() and opened[j].value() > 0.5)
+    if len(chosen) != k:
+        raise ValueError(f"решатель вернул {len(chosen)} площадок вместо {k}: "
+                         f"статус {pulp.LpStatus[problem.status]}")
+    return Solution(chosen, float(pulp.value(problem.objective) or 0.0),
+                    variant, evaluated=-1, tie_count=0)

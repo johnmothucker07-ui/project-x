@@ -221,3 +221,47 @@ def test_estimate_pairs_reports_volume_before_running():
     distances[0, 1] = distances[1, 0] = 100.0
     estimate = SV.estimate_pairs(4, _allowed(distances))
     assert estimate["pairs_total"] == 6 and estimate["pairs_allowed"] == 5
+
+
+# --- ILP при k > 2 (п. 10.3) ---
+
+def _toy():
+    base = np.array([60.0, 60.0, 60.0, 60.0])
+    site_times = np.array([[5.0, 60, 60, 60], [60, 5.0, 60, 60],
+                           [60, 60, 5.0, 60], [60, 60, 60, 5.0]])
+    population = np.array([100.0, 90.0, 80.0, 5.0])
+    allowed = np.ones((4, 4), bool)
+    np.fill_diagonal(allowed, False)
+    return site_times, base, population, allowed
+
+
+def test_ilp_matches_exhaustive_at_k2():
+    """Главная проверка решателя: на малой задаче ILP и перебор совпадают."""
+    site_times, base, population, allowed = _toy()
+    ilp = SV.solve_ilp(site_times, base, population, allowed, k=2, threshold=15)
+    exhaustive = SV.solve_max_coverage(site_times, base, population, allowed,
+                                       2, 15)
+    assert set(ilp.sites) == set(exhaustive.sites)
+
+
+def test_ilp_handles_k_above_two():
+    """Полный перебор при k > 2 неподъёмен: на 1497 площадках полмиллиарда троек."""
+    site_times, base, population, allowed = _toy()
+    solution = SV.solve_ilp(site_times, base, population, allowed, k=3,
+                            threshold=15)
+    assert len(solution.sites) == 3
+    assert 3 not in solution.sites          # самая малонаселённая клетка лишняя
+
+
+def test_ilp_respects_separation():
+    site_times, base, population, allowed = _toy()
+    allowed[0, 1] = allowed[1, 0] = False   # эту пару нельзя вместе
+    solution = SV.solve_ilp(site_times, base, population, allowed, k=2,
+                            threshold=15)
+    assert not {0, 1} <= set(solution.sites)
+
+
+def test_ilp_pmedian_prefers_high_weight_cells():
+    site_times, base, population, allowed = _toy()
+    solution = SV.solve_ilp(site_times, base, population, allowed, k=2)
+    assert set(solution.sites) == {0, 1}    # там наибольший вес спроса
