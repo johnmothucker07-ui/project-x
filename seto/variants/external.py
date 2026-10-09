@@ -36,8 +36,8 @@ def export_package(data, cfg: dict, city: str, data_manifest_hash: str,
     data.grid.to_parquet(paths["grid"])
     data.features.assign(population=data.population).to_parquet(
         paths["cell_features"])
-    data.clinics.drop(columns="geometry").to_csv(paths["clinics"], index=False,
-                                                 encoding="utf-8")
+    data.clinics.drop(columns="geometry", errors="ignore").to_csv(
+        paths["clinics"], index=False, encoding="utf-8")
     sites = data.grid.iloc[data.site_index][["cell_id", "geometry", "x", "y"]]
     sites = sites.assign(site_position=np.arange(len(data.site_index)))
     sites.to_parquet(paths["sites"])

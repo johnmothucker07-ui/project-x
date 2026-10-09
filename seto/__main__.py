@@ -337,11 +337,19 @@ def _load_city_data(run_dir: Path):
 
     times = np.load(run_dir / "times.npz")
     features = pd.read_parquet(run_dir / "cell_features.parquet")
+    grid = gpd.read_parquet(run_dir / "grid.parquet")
+    # в CSV геометрии нет, только lon/lat — восстанавливаем её и возвращаем
+    # в проекцию сетки, иначе расстояния считались бы в градусах
+    clinics_table = pd.read_csv(run_dir / "clinics.csv")
+    clinics = gpd.GeoDataFrame(
+        clinics_table,
+        geometry=gpd.points_from_xy(clinics_table["lon"], clinics_table["lat"]),
+        crs="EPSG:4326").to_crs(grid.crs)
     return CityData(
-        grid=gpd.read_parquet(run_dir / "grid.parquet"),
+        grid=grid,
         features=features.drop(columns=["population"], errors="ignore"),
         population=features["population"].to_numpy(),
-        clinics=gpd.GeoDataFrame(pd.read_csv(run_dir / "clinics.csv")),
+        clinics=clinics,
         base_times=times["base"], clinic_times=times["clinics"],
         site_times=times["sites"], site_index=times["site_index"],
         allowed_pairs=times["allowed"], report={})
