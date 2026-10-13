@@ -101,6 +101,44 @@ def cache_key(cell_id: str, model: str, prompt: str,
     return hashlib.sha256(parts.encode("utf-8")).hexdigest()
 
 
+class SourceIPUnavailable(RuntimeError):
+    """Адреса для привязки нет на машине — это настройка, а не сбой сети."""
+
+
+def local_ipv4() -> list[str]:
+    """Адреса IPv4 этой машины — чтобы подсказать их в сообщении об ошибке."""
+    import socket
+
+    try:
+        return sorted(socket.gethostbyname_ex(socket.gethostname())[2])
+    except OSError:
+        return []
+
+
+def check_source_ip(source_ip: str) -> None:
+    """Проверить, что к адресу можно привязаться.
+
+    Адрес Wi-Fi меняется при каждом переподключении, а устаревшее значение
+    даёт WinError 10049 изнутри httpx — ошибка выглядит как недоступный
+    сервер и уводит диагностику в сторону. Пробная привязка ловит это сразу:
+    если bind не прошёл здесь, он не пройдёт и у клиента."""
+    import socket
+
+    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        probe.bind((source_ip, 0))
+    except OSError as error:
+        available = ", ".join(local_ipv4()) or "не определены"
+        raise SourceIPUnavailable(
+            f"SETO_BIND_SOURCE_IP={source_ip} — такого адреса нет на машине "
+            f"({error.__class__.__name__}: {error}). Адреса сейчас: {available}. "
+            "Привязка нужна только при VPN «на весь трафик»: впиши текущий "
+            "адрес или закомментируй строку в .env."
+        ) from error
+    finally:
+        probe.close()
+
+
 def _make_client(cfg: dict):
     """Клиент модели.
 
@@ -123,6 +161,7 @@ def _make_client(cfg: dict):
     if source_ip:
         import httpx
 
+        check_source_ip(source_ip)
         http_client = httpx.Client(
             transport=httpx.HTTPTransport(local_address=source_ip),
             timeout=cfg["vlm"].get("timeout_s", 180))

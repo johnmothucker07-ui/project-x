@@ -48,8 +48,12 @@ def _remote_info(url: str) -> tuple[int | None, str | None]:
             length = response.headers.get("Content-Length")
             return (int(length) if length else None,
                     response.headers.get("Last-Modified"))
-    except (urllib.error.URLError, ValueError):
-        # не все зеркала отвечают на HEAD — это не повод падать
+    except (OSError, ValueError):
+        # Не все зеркала отвечают на HEAD — это не повод падать: размер и дата
+        # нужны только для прогресса и манифеста. Ловим OSError целиком, а не
+        # URLError: сети с перехватом DNS (университетский Wi-Fi) отвечают на
+        # несуществующее имя обрывом соединения, и тогда ошибка пробы уходила
+        # наружу вместо понятного DownloadError от самой загрузки.
         return None, None
 
 

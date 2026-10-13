@@ -262,3 +262,31 @@ def test_compare_detects_identical_weights():
 def test_compare_reports_relative_difference():
     result = W.compare(np.array([100.0, 100.0]), np.array([100.0, 150.0]))
     assert result["max_relative_diff"] == pytest.approx(0.5)
+
+
+# --- привязка исходящего адреса (обход VPN) ---
+
+def test_stale_source_ip_is_rejected_with_a_readable_message():
+    """Адрес Wi-Fi меняется при переподключении; устаревший давал WinError
+    10049 изнутри httpx и выглядел как недоступный сервер.
+
+    Берём адрес из TEST-NET-3: он зарезервирован под документацию и своим
+    не бывает, поэтому тест не мигает при смене сети."""
+    with pytest.raises(CL.SourceIPUnavailable, match="нет на машине"):
+        CL.check_source_ip("203.0.113.1")
+
+
+def test_error_lists_current_addresses_so_the_fix_is_obvious():
+    with pytest.raises(CL.SourceIPUnavailable) as caught:
+        CL.check_source_ip("203.0.113.7")
+    message = str(caught.value)
+    assert "Адреса сейчас" in message and ".env" in message
+
+
+def test_loopback_binds_fine():
+    CL.check_source_ip("127.0.0.1")              # не бросает
+
+
+def test_local_ipv4_returns_addresses():
+    addresses = CL.local_ipv4()
+    assert all(a.count(".") == 3 for a in addresses)
