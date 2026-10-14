@@ -152,3 +152,31 @@ def read_cell(tiles: list[Tile], bounds: tuple[float, float, float, float],
             f"клетка {bounds} покрыта снимком на "
             f"{100 * filled.mean():.1f} % — пропускаем, чёрные поля исказили бы оценку")
     return canvas
+
+
+def read_cell_warped(href: str, bounds: tuple[float, float, float, float],
+                     out_px: int, crs: str, resolution: float) -> np.ndarray:
+    """То же, но из растра в ЧУЖОЙ проекции — через перепроецирование на лету.
+
+    Нужно для контроля на Sentinel-2: сцены лежат в UTM, а сетка в LV95, и
+    квадрат клетки в UTM повёрнут. Читать повёрнутое окно и звать его клеткой
+    нельзя — снимок покрывал бы не ту территорию. WarpedVRT приводит растр к
+    проекции сетки, после чего окно берётся ровно по границам клетки, как и
+    у основного источника."""
+    from rasterio.vrt import WarpedVRT
+
+    with rasterio.Env(**GDAL_ENV):
+        path = f"/vsicurl/{href}" if href.startswith("http") else href
+        with rasterio.open(path) as src:
+            with WarpedVRT(src, crs=crs, resolution=resolution) as vrt:
+                # WarpedVRT не умеет boundless, поэтому выход за край сцены
+                # ловим сами: иначе клетка на краю молча приехала бы обрезанной
+                vl, vb, vr, vt = vrt.bounds
+                l, b, r, t = bounds
+                if l < vl or b < vb or r > vr or t > vt:
+                    raise CoverageError(
+                        f"клетка {bounds} выходит за край сцены {vrt.bounds}")
+                window = from_bounds(*bounds, vrt.transform)
+                piece = vrt.read([1, 2, 3], window=window,
+                                 out_shape=(3, out_px, out_px))
+    return np.moveaxis(piece, 0, -1).astype(np.uint8)

@@ -79,7 +79,7 @@ def _state_clinics(medical: gpd.GeoDataFrame, cfg: dict):
 
     Возвращает (сеть, отчёт об отборе): отчёт показывает, что и каким
     правилом выброшено, — без него число поликлиник нечем проверить."""
-    selection = clinics_mod.select(medical, cfg["base_network"])
+    selection = clinics_mod.select(medical, settings.setting(cfg, "base_network"))
     selection.check()
     return selection.frame.reset_index(drop=True), selection
 
