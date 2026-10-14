@@ -137,6 +137,51 @@ def agreement(scores: pd.DataFrame, reference_gsd: float) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def solve_by_level(scores: pd.DataFrame, grid, population: np.ndarray,
+                   base_times: np.ndarray, site_times: np.ndarray,
+                   allowed: np.ndarray, clinic_times: np.ndarray,
+                   cfg: dict) -> pd.DataFrame:
+    """Решить задачу размещения отдельно по скорам каждого разрешения.
+
+    Меры 2 и 3 протокола: меняется ли выбор площадок и во что это обходится
+    в покрытии. Веса и метрики считаются ТЕМ ЖЕ кодом, что в основном
+    эксперименте, — иначе сравнивали бы реализации, а не разрешения."""
+    from ..metrics import sfca
+    from ..scoring import weights as weights_mod
+    from ..sites import feasible as sites_mod
+    from ..variants import solve as solver
+    from .evaluate import _metrics_row
+
+    order = {cell: n for n, cell in enumerate(grid["cell_id"])}
+    k = min(cfg["k"], sites_mod.max_feasible_k(allowed, cfg["k"]))
+    floor = sfca.floor_value(len(clinic_times), population)
+    rows = []
+
+    for level in sorted(scores["gsd_m"].unique()):
+        part = scores[scores["gsd_m"] == level]
+        values = np.full(len(grid), np.nan)
+        for cell, score in zip(part["cell_id"], part["score"]):
+            if cell in order:
+                values[order[cell]] = score
+
+        normalized, _ = weights_mod.normalize(values)
+        demand = weights_mod.demand(population, normalized, cfg["alpha"])
+        solution = solver.solve_pmedian(site_times, base_times, demand,
+                                        allowed, k, str(level))
+        chosen = list(solution.sites)
+        times = np.minimum(base_times, site_times[chosen].min(axis=0))
+        facility = np.vstack([clinic_times, site_times[chosen]])
+
+        row = _metrics_row(str(level), times, base_times, population, cfg,
+                           facility, floor)
+        row["gsd_m"] = level
+        row["sites"] = tuple(chosen)
+        row["tie_count"] = solution.tie_count
+        rows.append(row)
+
+    return pd.DataFrame(rows)
+
+
 def noise_floor(scores: pd.DataFrame) -> dict:
     """Во сколько баллов обходится сам факт пересъёмки той же клетки.
 

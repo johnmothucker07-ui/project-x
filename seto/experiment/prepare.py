@@ -177,7 +177,7 @@ def prepare_city(city: str, cfg: dict, out_dir: Path, logger=None,
             graph, cells_snapped, clinic_snapped, speed,
             limit_m=cfg["min_dist_to_existing_m"]).min(axis=1)
         to_existing = np.where(np.isfinite(to_existing), to_existing, np.inf)
-        chosen = sites_mod.select(features, cfg["feasible_site"],
+        chosen = sites_mod.select(features, settings.setting(cfg, "feasible_site"),
                                   cells_snapped.attached, to_existing,
                                   cfg["min_dist_to_existing_m"])
         extra.update(chosen.as_dict())

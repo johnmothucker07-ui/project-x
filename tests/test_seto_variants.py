@@ -265,3 +265,19 @@ def test_ilp_pmedian_prefers_high_weight_cells():
     site_times, base, population, allowed = _toy()
     solution = SV.solve_ilp(site_times, base, population, allowed, k=2)
     assert set(solution.sites) == {0, 1}    # там наибольший вес спроса
+
+
+def test_built_from_can_be_overridden_per_city():
+    """Там, где тип здания в OSM почти не проставлен, застройку считают по
+    всем зданиям: в Люцерне тип есть у 26 % против 56 % в Москве."""
+    features = make_features(2, built_share=np.array([0.2, 0.0]),
+                             residential_share=np.array([0.0, 0.0]))
+    rule = {"min_built_area_share": 0.05, "built_from": ["built_share"]}
+    sites = FS.select(features, rule, np.ones(2, bool), np.full(2, 900.0), 500)
+    assert sites.index.tolist() == [0]
+
+
+def test_missing_built_from_column_is_a_clear_error():
+    rule = {"min_built_area_share": 0.05, "built_from": ["нет_такой"]}
+    with pytest.raises(KeyError, match="built_from"):
+        FS.select(make_features(1), rule, np.ones(1, bool), np.full(1, 900.0), 500)

@@ -53,6 +53,21 @@ base_network:
   typical: ""        # поэтому и спорных случаев нет
   exclude: {}
 
+# Застроенность считается по ВСЕМ зданиям, а не только по типизированным.
+# В Люцерне тип указан у 6807 зданий из 25839 (26 %), в Москве — у 56 %.
+# При правиле по умолчанию порог 5 % проходили 24 клетки из 208, а
+# допустимыми оставались 6 — сравнивать размещения на шести точках
+# бессмысленно. По built_share картина отражает реальную застройку.
+feasible_site:
+  min_built_area_share: 0.05
+  built_from: ["built_share"]
+  max_water_share: 0.5
+  max_green_share: 0.5
+  max_industrial_share: 0.5
+  max_railway_share: 0.5
+  max_cemetery_share: 0.5
+  max_military_share: 0.5
+
 raw:
   osm_pbf: null
   population_raster: null

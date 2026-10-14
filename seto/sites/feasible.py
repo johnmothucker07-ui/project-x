@@ -43,8 +43,16 @@ def select(features: pd.DataFrame, rule: dict, attached: np.ndarray,
     Считает, сколько клеток отсеяло каждое правило по отдельности — иначе
     непонятно, почему допустимых мало (п. 8 требует счётчиков по причинам)."""
     size = len(features)
-    built = (features["residential_share"].to_numpy()
-             + features["public_share"].to_numpy())
+    # Из каких колонок складывается «застроенность». По умолчанию только
+    # типизированные жилые и общественные здания. Там, где тип в OSM почти
+    # не проставлен, это занижает застройку в разы: в Люцерне тип есть у
+    # 26 % зданий против 56 % в Москве, и город выглядел бы пустым. Тогда в
+    # конфиге города берётся built_share — все здания без разбора типа.
+    columns = rule.get("built_from", ["residential_share", "public_share"])
+    missing = [c for c in columns if c not in features]
+    if missing:
+        raise KeyError(f"в признаках нет колонок {missing} для built_from")
+    built = sum(features[c].to_numpy() for c in columns)
 
     checks = {
         "мало жилой и общественной застройки": built >= rule["min_built_area_share"],
