@@ -20,6 +20,7 @@ from .. import settings
 from ..acquire.osm import describe_layers
 from ..costs.timer import SHARED, CostLog
 from ..data import boundary as boundary_mod
+from ..data import clinics as clinics_mod
 from ..data import features as features_mod
 from ..data import grid as grid_mod
 from ..data import osm_layers as layers_mod
@@ -68,16 +69,19 @@ class CityData:
         return paths
 
 
-def _state_clinics(medical: gpd.GeoDataFrame, cfg: dict) -> gpd.GeoDataFrame:
-    """Сеть государственных поликлиник.
+def _state_clinics(medical: gpd.GeoDataFrame, cfg: dict):
+    """Сеть государственных ВЗРОСЛЫХ поликлиник ПМСП (пропозал п. 3.1).
 
-    ВРЕМЕННО по названию: тег operator заполнен у 6 % объектов, а
-    operator:type у 0,2 % — по тегам OSM гос и частные не разделить.
-    Настоящее выделение требует реестра (п. 4.5, Л7), и до него это
-    ограничение идёт в протокол."""
-    pattern = cfg["city"].get("state_clinic_name_pattern", "поликлин")
-    names = medical["name"].fillna("").str.lower()
-    return medical[names.str.contains(pattern)].reset_index(drop=True)
+    Отбор по названию: тег operator заполнен у 6 % объектов, а operator:type
+    у 0,2 % — по тегам OSM гос и частные не разделить. Правила живут в
+    конфиге (`base_network`), здесь только применение. Настоящее выделение
+    требует реестра (п. 4.5, Л7), и до него ограничение идёт в протокол.
+
+    Возвращает (сеть, отчёт об отборе): отчёт показывает, что и каким
+    правилом выброшено, — без него число поликлиник нечем проверить."""
+    selection = clinics_mod.select(medical, cfg["base_network"])
+    selection.check()
+    return selection.frame.reset_index(drop=True), selection
 
 
 def prepare_city(city: str, cfg: dict, out_dir: Path, logger=None,
@@ -132,9 +136,11 @@ def prepare_city(city: str, cfg: dict, out_dir: Path, logger=None,
     with costs.stage("clinics", SHARED) as extra:
         medical = layers_mod.medical_facilities(
             points, layers["poi_polygons"], cfg["osm"]["clinic_tags"]).to_crs(crs)
-        clinics = _state_clinics(medical, cfg)
-        extra.update({"candidates": len(medical), "state_proxy": len(clinics)})
-        say("поликлиники", candidates=len(medical), state=len(clinics))
+        clinics, selection = _state_clinics(medical, cfg)
+        extra.update({"candidates": len(medical), "state_proxy": len(clinics),
+                      **selection.as_dict()})
+        say("поликлиники", candidates=len(medical), state=len(clinics),
+            uncertain=len(selection.uncertain))
 
     with costs.stage("graph", SHARED) as extra:
         graph = graph_mod.build(roads, cfg["walk_speed_m_per_min"],
@@ -196,7 +202,9 @@ def prepare_city(city: str, cfg: dict, out_dir: Path, logger=None,
         "population": transfer.as_dict(),
         "osm": layers_mod.completeness_report(layers["buildings"], roads, points),
         "clinics": {"candidates": len(medical), "state_proxy": len(clinics),
-                    "selection": "по названию — реестра нет (Л7)"},
+                    "selection": ("государственные взрослые ПМСП по названию — "
+                                  "реестра нет (Л7)"),
+                    **selection.as_dict()},
         "graph": {"nodes": graph.node_count, "edges": graph.edge_count,
                   "dropped_nodes": graph.dropped_nodes},
         "accessibility": {"unattached_cells": cells_snapped.unattached_count,
