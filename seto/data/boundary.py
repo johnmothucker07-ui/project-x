@@ -39,8 +39,14 @@ class Boundary:
 
 
 def load(pbf: Path, relation_id: int | None, admin_level: int,
-         fallback_level: int | None = 8) -> Boundary:
-    """Загрузить границу: по relation id, по admin_level или объединением."""
+         fallback_level: int | None = 8, epsg: int | None = None) -> Boundary:
+    """Загрузить границу: по relation id, по admin_level или объединением.
+
+    epsg — проекция сетки. По умолчанию UTM по центроиду. Задавать явно
+    нужно там, где у данных есть своя метрическая система: для Люцерна это
+    LV95 (EPSG:2056), в которой лежат снимки swisstopo. Совпадение проекций
+    сетки и растра оставляет клетку осевым квадратом, и окно снимка читается
+    точно по её границам, без поворота и лишнего перепроецирования."""
     admin = read_layer(pbf, "multipolygons",
                        columns=["osm_id", "name", "boundary", "admin_level"])
     admin = admin[admin["boundary"] == "administrative"].copy()
@@ -50,11 +56,11 @@ def load(pbf: Path, relation_id: int | None, admin_level: int,
 
     exact = admin[admin["osm_id"].astype("string") == str(relation_id)]
     if len(exact):
-        return _finish(exact, "relation", note=None)
+        return _finish(exact, "relation", note=None, epsg=epsg)
 
     same_level = admin[admin["admin_level"] == str(admin_level)]
     if len(same_level):
-        return _finish(same_level, "admin_level", note=None)
+        return _finish(same_level, "admin_level", note=None, epsg=epsg)
 
     if fallback_level is None:
         raise ValueError(
@@ -68,11 +74,12 @@ def load(pbf: Path, relation_id: int | None, admin_level: int,
     note = (f"relation {relation_id} и admin_level {admin_level} в снимке "
             f"отсутствуют; граница собрана объединением {len(lower)} единиц "
             f"уровня {fallback_level} — выгрузка обрезана по рамке")
-    return _finish(lower, "union_of_level", note=note)
+    return _finish(lower, "union_of_level", note=note, epsg=epsg)
 
 
-def _finish(parts: gpd.GeoDataFrame, source: str, note: str | None) -> Boundary:
-    """Собрать один полигон, починить геометрию и перевести в UTM."""
+def _finish(parts: gpd.GeoDataFrame, source: str, note: str | None,
+            epsg: int | None = None) -> Boundary:
+    """Собрать один полигон, починить геометрию и перевести в метрическую CRS."""
     parts = parts.copy()
     broken = ~parts.geometry.is_valid
     if broken.any():
@@ -80,7 +87,8 @@ def _finish(parts: gpd.GeoDataFrame, source: str, note: str | None) -> Boundary:
 
     shape = parts.union_all()
     geographic = gpd.GeoDataFrame(geometry=[shape], crs=parts.crs)
-    centroid = geographic.geometry.iloc[0].centroid
-    epsg = utm_epsg(centroid.x, centroid.y)
+    if epsg is None:
+        centroid = geographic.geometry.iloc[0].centroid
+        epsg = utm_epsg(centroid.x, centroid.y)
     return Boundary(frame=geographic.to_crs(epsg=epsg), utm_epsg=epsg,
                     source=source, parts=len(parts), note=note)

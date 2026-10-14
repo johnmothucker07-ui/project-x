@@ -1,0 +1,44 @@
+# Люцерн — город для подэксперимента о разрешении снимка (docs/RESOLUTION_STUDY.md).
+# В основной эксперимент НЕ входит: суждение модели о нужде в поликлинике
+# зависит от застройки и системы здравоохранения, и швейцарский скор ничего
+# не говорит о Москве. Здесь город сравнивается сам с собой на разных
+# разрешениях, для этого страна не важна.
+
+name: luzern
+title: "Люцерн"
+role: dev                    # dev | test | reserve
+
+boundary:
+  source: osm_relation
+  relation_id: 1682891       # Luzern, город; bbox 8.207–8.428 E, 46.998–47.084 N
+  admin_level: 8             # в Швейцарии город это Gemeinde
+
+# Сетка строится в швейцарской проекции LV95, а НЕ в UTM.
+# Причина: снимки swisstopo тоже в EPSG:2056. При совпадении проекций клетка
+# остаётся осевым квадратом в системе снимка, и окно читается точно по её
+# границам. В UTM квадрат клетки повернулся бы относительно растра, и пришлось
+# бы делать лишнее перепроецирование — а контракт требует, чтобы снимок
+# покрывал РОВНО ту территорию, по которой считаются признаки.
+utm_epsg: 2056
+
+sources:
+  osm_pbf:
+    url: "https://download.geofabrik.de/europe/switzerland-latest.osm.pbf"
+    license: "ODbL 1.0, OpenStreetMap contributors"
+  # Снимки не качаются целиком: это Cloud-Optimized GeoTIFF, окно под клетку
+  # читается прямо по сети. Плитка 1 км² при 0,1 м весит 76 МБ, на город их
+  # было бы около тридцати — незачем.
+  imagery:
+    stac: "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.swissimage-dop10"
+    gsd_m: 0.1
+    crs: 2056
+    license: "swisstopo, свободное использование; обязательна ссылка «©swisstopo»"
+    attribution: "©swisstopo"
+    terms: "https://www.swisstopo.admin.ch/en/terms-of-use-free-geodata-and-geoservices"
+
+raw:
+  osm_pbf: null
+  population_raster: null
+
+clinics_csv: null
+adult_share_csv: null

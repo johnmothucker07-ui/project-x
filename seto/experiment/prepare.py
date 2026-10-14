@@ -99,7 +99,8 @@ def prepare_city(city: str, cfg: dict, out_dir: Path, logger=None,
     with costs.stage("boundary", SHARED):
         bounds_cfg = cfg["city"]["boundary"]
         area = boundary_mod.load(pbf, bounds_cfg.get("relation_id"),
-                                 bounds_cfg.get("admin_level"))
+                                 bounds_cfg.get("admin_level"),
+                                 epsg=cfg["city"].get("utm_epsg"))
         say("граница", **area.as_dict())
 
     with costs.stage("grid", SHARED) as extra:
