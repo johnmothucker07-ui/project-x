@@ -1,7 +1,8 @@
 # ============================================================
 # SETO — параметры, общие для всех городов.
 # Источник значений — пропозал v4 (п. 3.1, 3.2) и SETO_experiment_TODO_1.md (п. 3.1).
-# В коде не должно быть ни одного из этих чисел.
+# Числа и пороги живут здесь, а не в коде. Исключение — списки тегов OSM
+# (типы зданий, слои-препятствия): они пока зашиты в data/, см. раздел osm.
 # ============================================================
 
 # --- Сценарий ---
@@ -87,14 +88,29 @@ random_draws: 1000           # сколько случайных допусти�
 seed: 0                      # сид для всего случайного
 
 # --- Допустимые площадки ---
-# [Д7] — правило пока черновое, требует подтверждения
+# [Д7] — правило пока черновое, требует подтверждения.
+# Клетка отсекается, если ЛЮБОЕ условие ниже не выполнено (sites/feasible.py).
+# Доля застройки — только здания с типом из data/features.py (RESIDENTIAL,
+# PUBLIC); здания с building=yes (на Москве 44 % зданий) в неё НЕ входят.
+# Слои-препятствия собираются в data/osm_layers.py и data/features.py:
+#   вода   — natural=water, waterway=riverbank
+#   зелень — leisure=park|garden и landuse=grass|forest
+#   промзона, ж/д, кладбище, военная — landuse=industrial|railway|cemetery|military
+# Препятствие отсекает клетку, только если занимает не меньше max_*_share
+# её площади; при меньшей доле клетка остаётся допустимой.
 feasible_site:
   min_built_area_share: 0.05      # доля площади жилых и общественных зданий в клетке
-  exclude_landuse: ["industrial", "railway", "cemetery", "military"]
-  exclude_natural: ["water"]
-  exclude_leisure: ["park", "garden"]
+  max_water_share: 0.5
+  max_green_share: 0.5
+  max_industrial_share: 0.5
+  max_railway_share: 0.5
+  max_cemetery_share: 0.5
+  max_military_share: 0.5
 
 # --- Теги OSM ---
+# Код читает отсюда только clinic_tags и walk_network. Списки landuse,
+# buildings, main_roads и poi — справочные: фактические списки зашиты в
+# data/osm_layers.py и data/features.py, и правка здесь ничего не изменит.
 osm:
   clinic_tags:
     amenity: ["clinic", "doctors", "hospital"]
@@ -120,7 +136,10 @@ osm:
 
 # --- Население ---
 population:
-  source: "worldpop"         # worldpop | ghs_pop  [Д9 — не подтверждено]
+  # Справочно: код это поле не читает. Берётся единственный *.tif из
+  # raw/<город>/<срез>/; на Москве это тайл GHS-POP E2025 R2023A (Д9).
+  # acquire растр не скачивает — он кладётся вручную (docs/SETO_README.md).
+  source: "ghs_pop"          # [Д9 — предложено, не подтверждено]
   resolution_m: 100
   mass_tolerance: 0.001      # расхождение суммы при переносе в клетки, доля
 

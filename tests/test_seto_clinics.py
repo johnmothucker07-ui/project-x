@@ -122,3 +122,21 @@ def test_cyrillic_word_boundary_works():
 def test_case_is_ignored():
     sel = CL.select(frame("ПОЛИКЛИНИКА №17", "детская Поликлиника №3"), RULES)
     assert sel.selected == 1 and sel.excluded_by["детская"] == 1
+
+
+def test_uncertain_queue_is_saved_with_coordinates(tmp_path):
+    """Сомнительные объекты уходят человеку файлом, а не только счётчиком."""
+    import geopandas as gpd
+    from shapely.geometry import Point
+
+    from seto.experiment.prepare import _save_uncertain
+
+    medical = gpd.GeoDataFrame(
+        {"name": ["Городская поликлиника №5", "Поликлиника Минсельхоза"]},
+        geometry=[Point(400000, 6170000)] * 2, crs=32637)
+    sel = CL.select(medical, RULES)
+    path = tmp_path / "clinics_uncertain.csv"
+    _save_uncertain(sel.uncertain, path)
+    saved = pd.read_csv(path)
+    assert saved["name"].tolist() == ["Поликлиника Минсельхоза"]
+    assert {"lon", "lat"} <= set(saved.columns)

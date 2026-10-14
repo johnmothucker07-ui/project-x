@@ -141,6 +141,9 @@ def prepare_city(city: str, cfg: dict, out_dir: Path, logger=None,
                       **selection.as_dict()})
         say("поликлиники", candidates=len(medical), state=len(clinics),
             uncertain=len(selection.uncertain))
+        # прошли фильтр, но название нетиповое — список нужен человеку (Л9),
+        # одного счётчика в отчёте для проверки мало
+        _save_uncertain(selection.uncertain, out_dir / "clinics_uncertain.csv")
 
     with costs.stage("graph", SHARED) as extra:
         graph = graph_mod.build(roads, cfg["walk_speed_m_per_min"],
@@ -223,10 +226,29 @@ def prepare_city(city: str, cfg: dict, out_dir: Path, logger=None,
     return data
 
 
+def _save_uncertain(uncertain: pd.DataFrame, path: Path) -> None:
+    """Сохранить очередь сомнительных поликлиник с координатами."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    table = pd.DataFrame(uncertain.drop(columns="geometry", errors="ignore"))
+    if isinstance(uncertain, gpd.GeoDataFrame) and len(uncertain):
+        points = uncertain.to_crs(4326).geometry
+        table = table.assign(lon=points.x.to_numpy(), lat=points.y.to_numpy())
+    table.to_csv(path, index=False, encoding="utf-8")
+
+
 def _population_raster(raw: Path) -> Path:
-    """Найти растр населения в папке снимка."""
+    """Найти растр населения в папке снимка.
+
+    `acquire` растр НЕ скачивает: тайл GHS-POP кладётся в папку снимка
+    вручную (см. docs/SETO_README.md). Берётся первый *.tif по алфавиту,
+    поэтому второго растра в папке быть не должно — иначе выбор молчаливый."""
     candidates = sorted(raw.glob("*.tif"))
     if not candidates:
         raise FileNotFoundError(
-            f"в {raw} нет растра населения (*.tif). Скачай его командой acquire")
+            f"в {raw} нет растра населения (*.tif). acquire его не скачивает: "
+            "положи тайл GHS-POP вручную, см. docs/SETO_README.md")
+    if len(candidates) > 1:
+        raise FileNotFoundError(
+            f"в {raw} несколько растров ({', '.join(p.name for p in candidates)}): "
+            "оставь один, иначе непонятно, на каком населении считать")
     return candidates[0]

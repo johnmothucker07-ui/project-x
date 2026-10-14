@@ -90,7 +90,8 @@ def run_city(city: str, cfg: dict, protocol_path: Path | None = None,
             scores["text"] = values
 
         if with_image:
-            images = _load_images(run.dir, data.features["cell_id"].tolist())
+            images = _load_images(_imagery_dir(cfg, city),
+                                  data.features["cell_id"].tolist())
             if images is None:
                 scoring_reports["image"] = {
                     "status": "missing", "reason": "снимки не загружены (п. 5, Л6)"}
@@ -131,9 +132,22 @@ def _save_solutions(evaluation, run_dir: Path) -> None:
             run_dir / "random_A.parquet")
 
 
-def _load_images(run_dir: Path, cell_ids) -> list[bytes] | None:
-    """Снимки клеток, если они загружены (п. 5). Иначе None."""
-    folder = run_dir.parent.parent / "imagery"
+def _imagery_dir(cfg: dict, city: str) -> Path:
+    """Где лежат снимки города: raw/<город>/<срез>/imagery/<cell_id>.png.
+
+    Снимки — сырые данные того же среза, что OSM и население, поэтому живут
+    рядом с ними. Папка своя у каждого города: cell_id нумеруются внутри
+    города, и общая папка смешала бы клетки разных городов."""
+    from .. import settings as settings_mod
+    return settings_mod.raw_dir(cfg, city, cfg["snapshot_date"]) / "imagery"
+
+
+def _load_images(folder: Path, cell_ids) -> list[bytes] | None:
+    """Снимки клеток, если они загружены (п. 5). Иначе None.
+
+    Загрузчика пока нет (Л6, Ш7): файлы должны появиться в folder по одному
+    PNG на клетку, обрезанные ровно по её квадрату. Нет хотя бы одного —
+    вариант D не считается целиком, частичный D сравнивать нельзя."""
     if not folder.is_dir():
         return None
     images = []

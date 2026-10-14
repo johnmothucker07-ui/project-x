@@ -154,19 +154,23 @@ def _facility_times(data, sites) -> np.ndarray:
     return np.vstack([existing, data.site_times[list(sites)]])
 
 
+_PAIR_ORDER = ("D", "C", "B", "E", "M")
+
+
 def _differences(table: pd.DataFrame, results: list[VariantResult],
                  cfg: dict) -> pd.DataFrame:
     """Разницы между вариантами в п.п. и жителях (п. 11.4)."""
     threshold = cfg["T_minutes"]
     indexed = table.set_index("variant")
     available = [r.name for r in results if r.sites and r.name in indexed.index]
-    reference = "D" if "D" in available else ("C" if "C" in available else None)
 
+    # Порядок пар — как в METRICS.md: проверяемый вариант слева (D − C, D − B,
+    # C − B). Алфавитный порядок дал бы «C − D», то есть главную разницу
+    # эксперимента с обратным знаком.
+    order = [name for name in _PAIR_ORDER if name in available]
     rows = []
-    for left in available:
-        for right in available:
-            if left >= right:
-                continue
+    for position, left in enumerate(order):
+        for right in order[position + 1:]:
             rows.append({
                 "pair": f"{left} − {right}",
                 f"dCov_{threshold}_pp": (indexed.loc[left, f"dCov_{threshold}"]
@@ -187,7 +191,9 @@ def _differences(table: pd.DataFrame, results: list[VariantResult],
                 "above_A_p95": bool(value > p95),
                 "percentile_in_A": float(100 * (random_result.distribution < value).mean()),
             })
-    if reference is None:
+    # строка-напоминание: без D главная разница эксперимента не посчитана,
+    # даже если C и B есть
+    if "D" not in available:
         rows.append({"pair": "D − …", f"dCov_{threshold}_pp": np.nan,
                      f"dN_{threshold}_people": np.nan,
                      "note": "вариант D не считался: нет снимков"})

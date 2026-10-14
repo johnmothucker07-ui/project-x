@@ -81,8 +81,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     import importlib.util
     # pyrosm намеренно не нужен: на Windows не собирается (зависимость cykhash
     # требует компилятор), PBF читаем драйвером OSM из GDAL через pyogrio.
+    # osmnx и networkx стенду не нужны: граф строится в scipy из снимка PBF
     needed = ("geopandas", "shapely", "pyproj", "pyogrio", "numpy", "pandas",
-              "yaml", "osmnx", "networkx", "rasterio", "scipy")
+              "yaml", "rasterio", "scipy", "openai", "dotenv", "pulp")
     missing = [name for name in needed if importlib.util.find_spec(name) is None]
     print(f"  установлено: {len(needed) - len(missing)}/{len(needed)}")
     if missing:
@@ -218,13 +219,23 @@ def cmd_report(args: argparse.Namespace) -> int:
 
 def cmd_freeze_protocol(args: argparse.Namespace) -> int:
     """Заморозить протокол и собрать страницу предрегистрации (п. 13)."""
-    from .experiment.protocol import ProtocolMismatch, freeze
+    from .experiment.protocol import ProtocolMismatch, city_data_hashes, freeze
 
     cfg = config_mod.load()
     cities = {name: config_mod.load_city(name).get("role", "?")
               for name in config_mod.available_cities()}
+    # протокол привязывается к данным городов проверки: без хешей run-test
+    # не заметил бы перекачку данных после заморозки
+    test_cities = [name for name, role in cities.items() if role == "test"]
+    hashes = city_data_hashes(_data_manifests(cfg, test_cities))
+    missing = sorted(set(test_cities) - set(hashes))
+    if missing:
+        print("нельзя замораживать: нет data_manifest.json у городов проверки "
+              f"{', '.join(missing)} — сначала `python -m seto acquire <город>`",
+              file=sys.stderr)
+        return 1
     try:
-        json_path, md_path = freeze(cfg, cities, {}, Path(args.out))
+        json_path, md_path = freeze(cfg, cities, hashes, Path(args.out))
     except ProtocolMismatch as error:
         print(f"нельзя замораживать: {error}", file=sys.stderr)
         return 1
@@ -236,7 +247,7 @@ def cmd_freeze_protocol(args: argparse.Namespace) -> int:
 
 def cmd_run_test(args: argparse.Namespace) -> int:
     """Прогон городов проверки: только при совпадении с протоколом (п. 13)."""
-    from .experiment.protocol import verify
+    from .experiment.protocol import city_data_hashes, verify
     from .experiment.runner import run_city
 
     protocol = Path(args.protocol)
@@ -249,7 +260,8 @@ def cmd_run_test(args: argparse.Namespace) -> int:
         cfg = config_mod.load(name)
         if cfg["city"].get("role") != "test":
             continue
-        check = verify(protocol, cfg)
+        check = verify(protocol, cfg,
+                       city_data_hashes(_data_manifests(cfg, [name])))
         if not check["ok"]:
             print(f"{name}: запуск запрещён — " + "; ".join(check["problems"]),
                   file=sys.stderr)
@@ -318,6 +330,12 @@ def cmd_log_human(args: argparse.Namespace) -> int:
     print(f"записано: {args.minutes} мин, {args.activity}")
     print(summary(path).to_string(index=False))
     return 0
+
+
+def _data_manifests(cfg: dict, cities: list[str]) -> dict[str, Path]:
+    """Пути к data_manifest.json городов в срезе snapshot_date."""
+    return {name: config_mod.raw_dir(cfg, name, cfg["snapshot_date"])
+            / "data_manifest.json" for name in cities}
 
 
 def _manifest_hash(run_dir: Path) -> str:
@@ -416,7 +434,9 @@ def cmd_acquire_imagery(args: argparse.Namespace) -> int:
     specs = plan_all(grid, cfg)
     print(f"провайдер {provider}: к загрузке {len(specs)} клеток, "
           f"зум {specs[0].zoom}, {specs[0].meters_per_pixel:.2f} м/пикс")
-    print("загрузка не выполнена: подключение провайдера — Ш7")
+    print("загрузка не выполнена: загрузчика тайлов ещё нет (Ш7) — нужно "
+          "скачать тайлы, склеить, обрезать по клетке и сохранить в "
+          f"{config_mod.raw_dir(cfg, args.city, cfg['snapshot_date']) / 'imagery'}")
     return 4
 
 

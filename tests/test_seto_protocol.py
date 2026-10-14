@@ -139,6 +139,24 @@ def test_verify_detects_other_commit(tmp_path, monkeypatch):
     assert not proto.verify(json_path, cfg)["ok"]
 
 
+def test_verify_detects_changed_city_data(tmp_path, monkeypatch):
+    """Протокол привязан к данным: перекачка после заморозки — отказ."""
+    monkeypatch.setattr(proto, "git_state",
+                        lambda: {"commit": "c1", "branch": "main", "dirty": False})
+    manifest = tmp_path / "data_manifest.json"
+    manifest.write_text('{"sources": ["a"]}', encoding="utf-8")
+    cfg = settings.load()
+    hashes = proto.city_data_hashes({"kazan": manifest})
+    json_path, _ = proto.freeze(cfg, {"kazan": "test"}, hashes, tmp_path / "p")
+
+    assert proto.verify(json_path, cfg, proto.city_data_hashes({"kazan": manifest}))["ok"]
+    manifest.write_text('{"sources": ["b"]}', encoding="utf-8")
+    changed = proto.verify(json_path, cfg, proto.city_data_hashes({"kazan": manifest}))
+    assert any("изменились" in p for p in changed["problems"])
+    assert not proto.verify(json_path, cfg, {})["ok"]       # манифеста нет
+    assert not proto.verify(json_path, cfg)["ok"]           # данные не проверяли
+
+
 def test_cannot_freeze_on_dirty_tree(tmp_path, monkeypatch):
     """Иначе протокол сослался бы на коммит, которого нет в истории."""
     monkeypatch.setattr(proto, "git_state",

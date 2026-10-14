@@ -63,16 +63,30 @@ def pilot_criteria(evaluation, cfg: dict, costs: dict | None = None) -> dict:
             quality["status"] = ("нет данных: вариант D не считался "
                                  "(нет снимков, Л6)")
 
+    # Надёжность определена через D, как и качество: «D дал допустимое решение
+    # без ручной правки». Пока D не считался, ставить «выполнен» по другим
+    # вариантам — та же подмена, что и в критерии качества.
+    statuses = {v.name: v.status for v in evaluation.variants}
+    if statuses.get("D") in ("ok", "skipped_duplicate"):
+        reliability_status = "выполнен"
+    elif statuses.get("D") == "failed":
+        reliability_status = "не выполнен"
+    else:
+        reliability_status = "нет данных: вариант D не считался (нет снимков, Л6)"
+
     return {
         "quality": quality,
-        "costs": (costs or {"status": "нет данных: журнал затрат не передан"}),
+        # В отчёт идёт только машинное время. Сам критерий (человеко-время D
+        # не больше половины E) требует журнала log-human и решения E —
+        # автоматически он не считается.
+        "costs": {"status": ("не оценён автоматически: нужен журнал "
+                             "человеко-времени (log-human) и решение E"),
+                  "machine_time": costs or "журнал затрат не передан"},
         "reliability": {
-            "statuses": {v.name: v.status for v in evaluation.variants},
-            "manual_fixes": 0,
-            "status": ("выполнен"
-                       if all(v.status in ("ok", "skipped_duplicate")
-                              for v in evaluation.variants if v.name != "D")
-                       else "не выполнен"),
+            "statuses": statuses,
+            # ручные правки код не видит: их фиксирует человек в журнале
+            "manual_fixes": "не измеряется кодом",
+            "status": reliability_status,
         },
     }
 
@@ -128,6 +142,10 @@ def md_table(frame: pd.DataFrame, digits: int = 2) -> str:
         if isinstance(value, (int, np.integer)):
             return f"{value:,}".replace(",", " ")
         if isinstance(value, float):
+            # A_i по 2SFCA имеет порядок 1e-5: при двух знаках он печатался
+            # бы как 0.00, и ноль нельзя было бы отличить от малого числа
+            if value != 0 and abs(value) < 10 ** -digits:
+                return f"{value:.3e}"
             return f"{value:,.{digits}f}".replace(",", " ")
         return str(value)
 

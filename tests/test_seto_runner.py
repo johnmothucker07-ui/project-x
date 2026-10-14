@@ -131,6 +131,22 @@ def test_pilot_quality_is_no_data_without_D(city, cfg):
     assert "нет данных" in criteria["quality"]["status"]
 
 
+def test_pilot_reliability_is_no_data_without_D(city, cfg):
+    """Надёжность тоже определена через D: без него не «выполнен»."""
+    result = run_variants(city, {}, cfg)
+    criteria = report_mod.pilot_criteria(result, cfg)
+    assert "нет данных" in criteria["reliability"]["status"]
+
+
+def test_differences_put_tested_variant_on_the_left(city, cfg):
+    """Знак как в METRICS.md: «D − C», «C − B», а не алфавитное «B − C»."""
+    scores = np.array([0.0, 10.0, 0.0, 10.0])
+    result = run_variants(city, {"text": scores, "image": scores[::-1]}, cfg)
+    pairs = result.differences["pair"].tolist()
+    assert "D − C" in pairs and "C − B" in pairs
+    assert "C − D" not in pairs and "B − C" not in pairs
+
+
 def test_report_files_are_written(city, cfg, tmp_path):
     result = run_variants(city, {}, cfg)
     city_report = {"name": "test", "boundary": {"area_km2": 1.0, "source": "x"},

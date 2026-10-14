@@ -108,8 +108,14 @@ def verify(protocol_path: Path, cfg: dict,
             problems.append(f"параметр {key}: {cfg.get(key)} вместо {value}")
 
     for city, expected in (protocol.get("data_hashes") or {}).items():
-        actual = (data_hashes or {}).get(city)
-        if actual is not None and actual != expected:
+        if data_hashes is None:
+            # вызывающий не проверял данные — молча считать их совпавшими нельзя
+            problems.append(f"данные города {city} не проверены")
+            continue
+        actual = data_hashes.get(city)
+        if actual is None:
+            problems.append(f"нет манифеста данных города {city}")
+        elif actual != expected:
             problems.append(f"данные города {city} изменились")
 
     return {"ok": not problems, "problems": problems,
@@ -119,6 +125,15 @@ def verify(protocol_path: Path, cfg: dict,
 def hash_city_data(manifest_path: Path) -> str:
     """Хеш манифеста данных города — им протокол привязывается к данным."""
     return sha256_of(manifest_path)
+
+
+def city_data_hashes(manifests: dict[str, Path]) -> dict[str, str]:
+    """Хеши data_manifest.json по городам; города без манифеста пропускаются.
+
+    Манифест пишет `acquire` в raw/<город>/<срез>/. В нём хеши сырых файлов,
+    поэтому хеш манифеста меняется при любой перекачке данных."""
+    return {city: hash_city_data(path) for city, path in manifests.items()
+            if Path(path).is_file()}
 
 
 def _markdown(protocol: dict) -> str:
