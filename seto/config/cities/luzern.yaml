@@ -25,12 +25,23 @@ sources:
   osm_pbf:
     url: "https://download.geofabrik.de/europe/switzerland-latest.osm.pbf"
     license: "ODbL 1.0, OpenStreetMap contributors"
+  # Тайл GHS-POP, покрывающий город. Номер считается по координатам центроида
+  # в проекции Mollweide; тайлов около 350, и выбор не того даёт пустое
+  # население без явной ошибки — поэтому ссылка зафиксирована здесь.
+  population_raster:
+    url: "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_POP_GLOBE_R2023A/GHS_POP_E2025_GLOBE_R2023A_54009_100/V1-0/tiles/GHS_POP_E2025_GLOBE_R2023A_54009_100_V1_0_R4_C19.zip"
+    license: "CC BY 4.0, European Commission JRC (GHSL)"
   # Снимки не качаются целиком: это Cloud-Optimized GeoTIFF, окно под клетку
   # читается прямо по сети. Плитка 1 км² при 0,1 м весит 76 МБ, на город их
   # было бы около тридцати — незачем.
   imagery:
     stac: "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.swissimage-dop10"
     gsd_m: 0.1
+    # Швейцария снимается двумя чередующимися кампаниями, и на одной позиции
+    # в каталоге лежат снимки разных лет. Год фиксируется: иначе сезон и
+    # освещение попали бы в сравнение разрешений как посторонний источник
+    # различий. 2024 покрывает все 208 клеток Люцерна.
+    year: 2024
     crs: 2056
     license: "swisstopo, свободное использование; обязательна ссылка «©swisstopo»"
     attribution: "©swisstopo"

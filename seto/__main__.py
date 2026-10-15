@@ -138,7 +138,24 @@ def cmd_acquire(args: argparse.Namespace) -> int:
             logger.info("слой", layer=name, **{k: v for k, v in info.items()
                                                if k != "fields"})
 
-        manifest = write_data_manifest([source], raw / "data_manifest.json",
+        sources = [source]
+        # Растр населения качается только если он прописан в конфиге города.
+        # Раньше его клали руками, и это был шаг, на котором легко взять не
+        # тот тайл: у GHS-POP их 350, выбор по координатам неочевиден.
+        raster_cfg = sources_cfg.get("population_raster")
+        if raster_cfg:
+            from .acquire.download import fetch_population_raster
+
+            raster = fetch_population_raster(
+                raster_cfg["url"], raw, raster_cfg.get("license"),
+                overwrite=args.overwrite)
+            logger.info("растр населения",
+                        size_mb=round(raster.size_bytes / (1 << 20), 1),
+                        sha256=raster.sha256[:16])
+            run.record_input(raster.path)
+            sources.append(raster)
+
+        manifest = write_data_manifest(sources, raw / "data_manifest.json",
                                        snapshot, notes={"layers": layers})
         run.record_output(manifest)
         logger.close()
@@ -146,6 +163,47 @@ def cmd_acquire(args: argparse.Namespace) -> int:
     print(f"\nсырые данные: {raw}")
     print(f"манифест данных: {manifest}")
     print(f"манифест прогона: {run.dir / 'manifest.json'}")
+    return 0
+
+
+def cmd_resolution_study(args: argparse.Namespace) -> int:
+    """Подэксперимент: влияние разрешения снимка (docs/RESOLUTION_STUDY.md)."""
+    import json
+
+    from .experiment.resolution import run_study
+
+    cfg = config_mod.load(args.city)
+    if args.snapshot_date:
+        cfg["snapshot_date"] = args.snapshot_date
+    if not cfg.get("snapshot_date"):
+        print("не задан snapshot_date: укажи --snapshot-date", file=sys.stderr)
+        return 1
+    if "imagery" not in (cfg["city"].get("sources") or {}):
+        print(f"у города {args.city} в конфиге нет sources.imagery — "
+              "подэксперимент требует источника снимков", file=sys.stderr)
+        return 1
+
+    prepared = Path(args.prepared)
+    if not (prepared / "grid.parquet").is_file():
+        print(f"в {prepared} нет grid.parquet: сначала prepare-city",
+              file=sys.stderr)
+        return 1
+
+    raw = config_mod.raw_dir(cfg, args.city, cfg["snapshot_date"])
+    with Run.start(args.city, "resolution-study", cfg) as run:
+        logger = RunLogger(run.run_id, run.dir / "log.jsonl")
+        summary = run_study(args.city, cfg, raw, prepared, run.dir,
+                            levels=args.levels, encoder_px=args.encoder_px,
+                            source_gsd=min(args.levels), logger=logger)
+        report = run.dir / "resolution_report.json"
+        report.write_text(json.dumps(summary, ensure_ascii=False, indent=2),
+                          encoding="utf-8")
+        run.record_output(report)
+        logger.close()
+
+    print()
+    print(f"результаты: {run.dir}")
+    print(f"согласие с эталоном: {run.dir / 'agreement.csv'}")
     return 0
 
 
@@ -616,6 +674,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("city")
     p.add_argument("run_dir")
     p.set_defaults(func=cmd_acquire_imagery)
+
+    p = sub.add_parser("resolution-study",
+                       help="влияние разрешения снимка на суждение модели")
+    p.add_argument("city")
+    p.add_argument("prepared", help="папка прогона prepare-city")
+    p.add_argument("--snapshot-date")
+    p.add_argument("--levels", type=float, nargs="+",
+                   default=[0.5, 1.0, 3.0, 10.0],
+                   help="разрешения в метрах на пиксель; первое — эталон")
+    p.add_argument("--encoder-px", type=int, default=896,
+                   help="размер входа кодировщика модели")
+    p.set_defaults(func=cmd_resolution_study)
 
     p = sub.add_parser("prompt-dev", help="диагностика промпта (города dev)")
     p.add_argument("city")

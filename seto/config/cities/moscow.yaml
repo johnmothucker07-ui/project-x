@@ -22,6 +22,12 @@ sources:
   osm_pbf:
     url: "https://download.bbbike.org/osm/bbbike/Moscow/Moscow.osm.pbf"
     license: "ODbL 1.0, OpenStreetMap contributors"
+  # Тайл GHS-POP, покрывающий город. Номер считается по координатам центроида
+  # в проекции Mollweide; тайлов около 350, и выбор не того даёт пустое
+  # население без явной ошибки — поэтому ссылка зафиксирована здесь.
+  population_raster:
+    url: "https://jeodpp.jrc.ec.europa.eu/ftp/jrc-opendata/GHSL/GHS_POP_GLOBE_R2023A/GHS_POP_E2025_GLOBE_R2023A_54009_100/V1-0/tiles/GHS_POP_E2025_GLOBE_R2023A_54009_100_V1_0_R3_C21.zip"
+    license: "CC BY 4.0, European Commission JRC (GHSL)"
 
 # Заполняется после acquire: фактические пути, хеши и даты — в data_manifest.json
 raw:

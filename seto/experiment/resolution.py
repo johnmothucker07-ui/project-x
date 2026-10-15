@@ -197,3 +197,50 @@ def noise_floor(scores: pd.DataFrame) -> dict:
     return {"pair": f"{levels[0]} vs {levels[1]}",
             "mean_abs_shift": round(float(diff.mean()), 3),
             "share_over_2": round(float((diff > 2).mean()), 4)}
+
+
+def run_study(city: str, cfg: dict, raw: Path, prepared: Path, out_dir: Path,
+              levels: list[float], encoder_px: int, source_gsd: float,
+              logger=None) -> dict:
+    """Подэксперимент целиком: от индекса плиток до трёх мер.
+
+    Одна функция на весь протокол, чтобы прогон воспроизводился командой, а
+    не последовательностью действий из головы. Всё, что она пишет, ложится
+    в папку прогона рядом с манифестом."""
+    import geopandas as gpd
+
+    from .. import settings
+    from ..imagery import source as source_mod
+
+    say = logger.info if logger else (lambda *a, **k: None)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    imagery_cfg = cfg["city"]["sources"]["imagery"]
+
+    grid = gpd.read_parquet(prepared / "grid.parquet")
+    bbox = tuple(grid.to_crs(4326).total_bounds)
+    tiles = source_mod.index_tiles(imagery_cfg["stac"], bbox,
+                                   imagery_cfg["gsd_m"],
+                                   year=imagery_cfg.get("year"))
+    say("плитки снимка", found=len(tiles),
+        years=sorted({t.year for t in tiles}))
+
+    catalogue, build = build_sets(grid, tiles, levels, cfg["grid"]["size_m"],
+                                  encoder_px, out_dir / "imagery",
+                                  source_gsd=source_gsd, logger=logger)
+    catalogue.to_csv(out_dir / "catalogue.csv", index=False)
+    say("наборы собраны", **build.as_dict())
+
+    cache = settings.data_root(cfg) / cfg["paths"]["vlm_cache"] / "image"
+    scores = score_sets(catalogue, out_dir / "imagery", cfg, cache, logger)
+    scores.to_parquet(out_dir / "scores_resolution.parquet")
+
+    reference = min(levels)
+    table = agreement(scores, reference)
+    table.to_csv(out_dir / "agreement.csv", index=False)
+    floor = noise_floor(scores)
+    say("согласие посчитано", reference=reference, noise_floor=floor)
+
+    return {"city": city, "reference_gsd": reference, "levels": levels,
+            "tiles": len(tiles), "build": build.as_dict(),
+            "noise_floor": floor,
+            "agreement": table.to_dict(orient="records")}

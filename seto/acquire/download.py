@@ -135,3 +135,36 @@ def write_data_manifest(sources: list[Source], path: Path,
     with path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     return path
+
+
+def fetch_population_raster(url: str, raw: Path, license_note: str | None = None,
+                            overwrite: bool = False) -> Source:
+    """Скачать тайл GHS-POP и распаковать, если он в архиве.
+
+    Раньше растр клали в папку снимка руками. Это был шаг, на котором легко
+    ошибиться: у GHS-POP около 350 тайлов, и по координатам города нужный
+    неочевиден — выбор не того тайла даёт пустое население без явной ошибки.
+    Поэтому ссылка лежит в конфиге города, а хеш попадает в манифест.
+    """
+    import zipfile
+
+    name = url.rsplit("/", 1)[-1]
+    archive = fetch(url, raw / name, name="population_raster",
+                    license_note=license_note, overwrite=overwrite)
+    if not name.lower().endswith(".zip"):
+        return archive
+
+    with zipfile.ZipFile(raw / name) as bundle:
+        inside = [n for n in bundle.namelist() if n.lower().endswith(".tif")]
+        if len(inside) != 1:
+            raise DownloadError(
+                f"в архиве {name} не один растр, а {len(inside)}: "
+                "непонятно, какой брать")
+        target = raw / Path(inside[0]).name
+        if overwrite or not target.exists():
+            with bundle.open(inside[0]) as src, target.open("wb") as out:
+                out.write(src.read())
+
+    # В манифест пишем сам растр, а не архив: считать будут по нему.
+    return _describe("population_raster", url, target,
+                     archive.last_modified, license_note)

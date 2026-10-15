@@ -4,7 +4,8 @@ shapely>=2.0           # геометрические операции
 pyarrow>=15.0          # чтение/запись GeoParquet
 pyproj>=3.6            # проекции координат
 pyogrio>=0.7           # SETO: чтение PBF драйвером OSM из GDAL
-rasterio>=1.3          # SETO: растр населения GHS-POP
+rasterio>=1.3          # SETO: растр населения GHS-POP, снимки COG по сети
+Pillow>=10.0           # SETO: огрубление снимка до нужного разрешения
 
 # --- Сбор данных ---
 requests>=2.31         # HTTP: Overpass, OSRM, спутник (MVP)
